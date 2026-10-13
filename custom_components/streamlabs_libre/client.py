@@ -11,6 +11,8 @@ import logging
 import time
 from typing import Any, Dict, List, Literal, Optional
 import requests
+from botocore import UNSIGNED
+from botocore.config import Config
 from pycognito import Cognito
 from pycognito.exceptions import ForceChangePasswordException, SoftwareTokenMFAChallengeException
 
@@ -59,6 +61,7 @@ class StreamLabsClient:
             client_id=COGNITO_CLIENT_ID,
             user_pool_region=COGNITO_REGION,
             username=self.username,
+            boto3_client_kwargs={"config": Config(signature_version=UNSIGNED)},
         )
         self.token_expiry: float = 0.0
         self.session = session or requests.Session()

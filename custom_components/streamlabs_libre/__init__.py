@@ -38,7 +38,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: StreamlabsConfigEntry) -
     username = entry.data[CONF_USERNAME]
     password = entry.data[CONF_PASSWORD]
 
-    client = StreamLabsClient(username, password)
+    client = await hass.async_add_executor_job(StreamLabsClient, username, password)
     coordinator = StreamlabsCoordinator(hass, entry, client)
 
     await coordinator.async_config_entry_first_refresh()

@@ -41,10 +41,13 @@ class StreamlabsConfigFlow(ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(username.lower())
             self._abort_if_unique_id_configured()
 
-            client = StreamLabsClient(username, password)
+            def _validate() -> list[dict[str, Any]]:
+                client = StreamLabsClient(username, password)
+                resp = client.get_locations()
+                return resp.get("locations", [])
+
             try:
-                resp = await self.hass.async_add_executor_job(client.get_locations)
-                locations = resp.get("locations", [])
+                locations = await self.hass.async_add_executor_job(_validate)
             except StreamLabsAuthError:
                 errors["base"] = "invalid_auth"
             except StreamLabsConnectionError:
