@@ -1,0 +1,23 @@
+services:
+  streamlabs-mqtt:
+    build:
+      context: ..
+      dockerfile: mqtt_bridge/Dockerfile
+    container_name: streamlabs-mqtt-bridge
+    restart: unless-stopped
+    environment:
+      # StreamLabs Credentials
+      - STREAMLABS_USER=user@example.com
+      - STREAMLABS_PASS=your_password
+      # Optional: Filter locations (comma-separated)
+      # - STREAMLABS_LOCATIONS=loc-12345
+      - STREAMLABS_POLL_INTERVAL=60
+
+      # MQTT Broker Configuration
+      - MQTT_BROKER=192.168.1.100
+      - MQTT_PORT=1883
+      # - MQTT_USERNAME=mqtt_user
+      # - MQTT_PASSWORD=mqtt_password
+      - MQTT_DISCOVERY_PREFIX=homeassistant
+      - MQTT_TOPIC_PREFIX=streamlabs
+      - LOG_LEVEL=INFO

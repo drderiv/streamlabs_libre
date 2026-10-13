@@ -1,0 +1,16 @@
+{
+  "services": {
+    "set_away_mode": {
+      "service": "mdi:home"
+    },
+    "set_valve": {
+      "service": "mdi:pipe-valve"
+    },
+    "run_drip_detect": {
+      "service": "mdi:water-alert"
+    },
+    "calibrate": {
+      "service": "mdi:tune"
+    }
+  }
+}

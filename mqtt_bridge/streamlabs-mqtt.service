@@ -1,0 +1,15 @@
+[Unit]
+Description=StreamLabs MQTT Bridge for Home Assistant
+After=network.target
+
+[Service]
+Type=simple
+User=robert
+WorkingDirectory=/home/robert/streamlabs
+EnvironmentFile=-/etc/default/streamlabs-mqtt
+ExecStart=/usr/bin/python3 -m mqtt_bridge.bridge
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

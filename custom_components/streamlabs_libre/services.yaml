@@ -1,0 +1,57 @@
+set_away_mode:
+  name: Set Away Mode
+  description: Sets the home or away monitoring mode for a StreamLabs device.
+  fields:
+    away_mode:
+      name: Away Mode
+      description: Target monitoring state (home or away).
+      required: true
+      selector:
+        select:
+          options:
+            - "away"
+            - "home"
+    device_id:
+      name: Device ID
+      description: Specific StreamLabs Device ID to target (optional if single device).
+      selector:
+        text:
+
+set_valve:
+  name: Set Valve Position
+  description: Actuates the water shutoff valve directly.
+  fields:
+    position:
+      name: Valve Position
+      description: Target valve position (open or close).
+      required: true
+      selector:
+        select:
+          options:
+            - "open"
+            - "close"
+    device_id:
+      name: Device ID
+      description: Specific StreamLabs Device ID to target (optional if single device).
+      selector:
+        text:
+
+run_drip_detect:
+  name: Run Drip Detect
+  description: Triggers a diagnostic drip detect routine on the device.
+  fields:
+    device_id:
+      name: Device ID
+      description: Specific StreamLabs Device ID to target.
+      selector:
+        text:
+
+calibrate:
+  name: Calibrate
+  description: Initiates device flow calibration.
+  fields:
+    device_id:
+      name: Device ID
+      description: Specific StreamLabs Device ID to target.
+      selector:
+        text:

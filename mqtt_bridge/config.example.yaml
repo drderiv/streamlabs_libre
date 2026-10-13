@@ -1,0 +1,29 @@
+# StreamLabs MQTT Bridge Configuration Example
+
+# StreamLabs Account Credentials
+streamlabs_user: "user@example.com"
+streamlabs_pass: "your_password"
+
+# Optional: List of location IDs to monitor (empty means monitor all)
+# streamlabs_locations:
+#   - "loc-12345"
+
+# Polling Interval (in seconds, default: 60)
+poll_interval: 60
+
+# MQTT Broker Settings
+mqtt_host: "localhost"
+mqtt_port: 1883
+# mqtt_username: "mqtt_user"
+# mqtt_password: "mqtt_password"
+mqtt_client_id: "streamlabs_bridge"
+mqtt_tls: false
+
+# Home Assistant MQTT Auto-Discovery Prefix (default: "homeassistant")
+discovery_prefix: "homeassistant"
+
+# Base MQTT topic prefix for Streamlabs devices (default: "streamlabs")
+topic_prefix: "streamlabs"
+
+# Logging level (DEBUG, INFO, WARNING, ERROR)
+log_level: "INFO"

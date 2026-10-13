@@ -1,0 +1,16 @@
+{
+  "domain": "streamlabs_libre",
+  "name": "StreamLabs Libre",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/robert/streamlabs",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/robert/streamlabs/issues",
+  "loggers": ["custom_components.streamlabs_libre"],
+  "requirements": [
+    "pycognito>=2024.5.1",
+    "requests>=2.31.0"
+  ],
+  "version": "1.0.0"
+}
