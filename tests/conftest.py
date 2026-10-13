@@ -170,7 +170,7 @@ sys.modules["homeassistant.config_entries"].ConfigFlowResult = dict[str, Any]
 sys.modules["homeassistant.config_entries"].ConfigEntry = MagicMock
 sys.modules["homeassistant.config_entries"].ConfigEntry.__class_getitem__ = lambda cls, item: cls
 
-# Home Assistant core validation and helpers
+sys.modules["homeassistant.core"].callback = lambda func: func
 cv_mock = sys.modules["homeassistant.helpers.config_validation"]
 cv_mock.string = str
 cv_mock.multi_select = lambda options: lambda val: val
