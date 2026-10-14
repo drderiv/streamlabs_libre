@@ -119,8 +119,19 @@ class ConfigFlow:
 
 
 class OptionsFlow:
+    _config_entry: Any = None
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         pass
+
+    @property
+    def config_entry(self) -> Any:
+        return self._config_entry
+
+    @config_entry.setter
+    def config_entry(self, value: Any) -> None:
+        self._config_entry = value
+
 
     def async_create_entry(self, *, title: str = "", data: dict[str, Any]) -> dict[str, Any]:
         return {"type": "create_entry", "title": title, "data": data}

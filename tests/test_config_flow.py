@@ -103,7 +103,8 @@ async def test_options_flow():
     mock_entry.options = {CONF_SCAN_INTERVAL: 45}
     mock_entry.data = {}
 
-    options_flow = StreamlabsOptionsFlowHandler(mock_entry)
+    options_flow = StreamlabsOptionsFlowHandler()
+    options_flow.config_entry = mock_entry
 
     # Test showing options form
     form_result = await options_flow.async_step_init()
@@ -122,4 +123,4 @@ def test_async_get_options_flow():
     mock_entry = MagicMock()
     handler = StreamlabsConfigFlow.async_get_options_flow(mock_entry)
     assert isinstance(handler, StreamlabsOptionsFlowHandler)
-    assert handler.config_entry == mock_entry
+
