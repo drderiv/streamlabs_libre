@@ -156,6 +156,19 @@ def test_get_water_usage(client, mock_cognito):
         )
 
 
+def test_get_water_usage_no_date(client, mock_cognito):
+    with patch.object(client.session, "get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {"day": {"todayTotal": 15.0}}
+        result = client.get_water_usage("dev-1")
+        assert result == {"day": {"todayTotal": 15.0}}
+        mock_get.assert_called_once_with(
+            "https://api.platform.streamlabs.io/devices/dev-1/water",
+            params=None,
+            timeout=15,
+        )
+
+
 def test_send_command(client, mock_cognito):
     with patch.object(client.session, "post") as mock_post:
         mock_post.return_value.status_code = 200

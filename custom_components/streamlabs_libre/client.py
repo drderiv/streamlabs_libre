@@ -219,14 +219,12 @@ class StreamLabsClient:
             raise StreamLabsConnectionError(f"Failed to update monitoring mode: {err}") from err
 
     def get_water_usage(self, device_id: str, date_str: Optional[str] = None) -> Dict[str, Any]:
-        """Retrieve day, week, and month volumetric water consumption."""
+        """Retrieve volumetric water consumption (comparative day, week, month, year totals)."""
         self._ensure_authenticated()
-        if not date_str:
-            date_str = datetime.datetime.now().strftime("%Y-%m-%d")
-
         url = f"{BASE_URL}/devices/{device_id}/water"
+        params = {"date": date_str} if date_str else None
         try:
-            resp = self.session.get(url, params={"date": date_str}, timeout=15)
+            resp = self.session.get(url, params=params, timeout=15)
             resp.raise_for_status()
             return resp.json()
         except requests.RequestException as err:

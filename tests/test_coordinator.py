@@ -51,6 +51,18 @@ def test_coordinator_extract_usage(mock_hass, mock_client):
     assert m == 0.0
     assert y == 0.0
 
+    # Format 4: Flat comparative keys
+    d, m, y = coordinator._extract_usage({"todayTotal": 8.0, "thisMonthTotal": 80.0, "thisYearTotal": 800.0})
+    assert d == 8.0
+    assert m == 80.0
+    assert y == 800.0
+
+    # Format 5: Logical fallback when year is 0.0 but month is positive
+    d, m, y = coordinator._extract_usage({"today": 5.0, "thisMonth": 50.0, "thisYear": 0.0})
+    assert d == 5.0
+    assert m == 50.0
+    assert y == 50.0
+
 
 def test_coordinator_update_data_filtering(mock_hass, mock_client):
     entry = MagicMock()

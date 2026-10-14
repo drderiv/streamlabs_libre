@@ -134,27 +134,89 @@ class StreamLabsMQTTBridge:
         monthly = 0.0
         yearly = 0.0
 
-        if not usage_data:
+        if not usage_data or not isinstance(usage_data, dict):
             return daily, monthly, yearly
 
-        if "today" in usage_data:
-            daily = float(usage_data.get("today", 0.0) or 0.0)
-            monthly = float(usage_data.get("thisMonth", 0.0) or 0.0)
-            yearly = float(usage_data.get("thisYear", 0.0) or 0.0)
-            return daily, monthly, yearly
+        # 1. Extract daily consumption
+        day_val = usage_data.get("day")
+        if isinstance(day_val, dict):
+            for k in ("todayTotal", "total", "today", "value", "volume"):
+                if k in day_val and day_val[k] is not None:
+                    try:
+                        daily = float(day_val[k])
+                        if daily > 0:
+                            break
+                    except (ValueError, TypeError):
+                        pass
+        elif isinstance(day_val, (int, float)):
+            daily = float(day_val)
 
-        day_obj = usage_data.get("day")
-        if isinstance(day_obj, dict):
-            daily = float(day_obj.get("todayTotal", 0.0) or 0.0)
-        month_obj = usage_data.get("month")
-        if isinstance(month_obj, dict):
-            monthly = float(month_obj.get("thisMonthTotal", month_obj.get("total", 0.0)) or 0.0)
-        year_obj = usage_data.get("year")
-        if isinstance(year_obj, dict):
-            yearly = float(year_obj.get("thisYearTotal", year_obj.get("total", 0.0)) or 0.0)
+        if daily == 0.0:
+            for k in ("today", "todayTotal", "daily", "dailyTotal"):
+                if k in usage_data and usage_data[k] is not None:
+                    try:
+                        daily = float(usage_data[k])
+                        if daily > 0:
+                            break
+                    except (ValueError, TypeError):
+                        pass
 
+        # 2. Extract monthly consumption
+        month_val = usage_data.get("month")
+        if isinstance(month_val, dict):
+            for k in ("thisMonthTotal", "total", "thisMonth", "value", "volume"):
+                if k in month_val and month_val[k] is not None:
+                    try:
+                        monthly = float(month_val[k])
+                        if monthly > 0:
+                            break
+                    except (ValueError, TypeError):
+                        pass
+        elif isinstance(month_val, (int, float)):
+            monthly = float(month_val)
+
+        if monthly == 0.0:
+            for k in ("thisMonth", "thisMonthTotal", "monthly", "monthlyTotal", "monthTotal"):
+                if k in usage_data and usage_data[k] is not None:
+                    try:
+                        monthly = float(usage_data[k])
+                        if monthly > 0:
+                            break
+                    except (ValueError, TypeError):
+                        pass
+
+        # 3. Extract yearly consumption
+        year_val = usage_data.get("year")
+        if isinstance(year_val, dict):
+            for k in ("thisYearTotal", "total", "thisYear", "value", "volume"):
+                if k in year_val and year_val[k] is not None:
+                    try:
+                        yearly = float(year_val[k])
+                        if yearly > 0:
+                            break
+                    except (ValueError, TypeError):
+                        pass
+        elif isinstance(year_val, (int, float)):
+            yearly = float(year_val)
+
+        if yearly == 0.0:
+            for k in ("thisYear", "thisYearTotal", "yearly", "yearlyTotal", "yearTotal"):
+                if k in usage_data and usage_data[k] is not None:
+                    try:
+                        yearly = float(usage_data[k])
+                        if yearly > 0:
+                            break
+                    except (ValueError, TypeError):
+                        pass
+
+        # 4. Fallback for timeseries array {"data": [{"volume": ...}]}
         if daily == 0.0 and "data" in usage_data and isinstance(usage_data["data"], list):
             daily = sum(float(pt.get("volume", 0.0) or 0.0) for pt in usage_data["data"] if isinstance(pt, dict))
+
+        # 5. Logical consistency fallback:
+        # A full calendar year's water usage cannot be less than the current month's usage.
+        if yearly == 0.0 and monthly > 0.0:
+            yearly = monthly
 
         return daily, monthly, yearly
 
