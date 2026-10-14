@@ -109,9 +109,18 @@ def test_sensors(mock_coordinator):
 
     yearly = StreamlabsSensor(mock_coordinator, "dev-test", sensors_by_key["yearly_usage"])
     assert yearly.native_value == 1800.0
+    assert yearly.extra_state_attributes is None
+
+    mock_coordinator.data["dev-test"].yearly_used_since = "Oct, 2025"
+    mock_coordinator.data["dev-test"].monthly_history = [3000.0, 3100.0]
+    assert yearly.extra_state_attributes == {
+        "used_since": "Oct, 2025",
+        "monthly_history": [3000.0, 3100.0],
+    }
 
     gallons_today = StreamlabsSensor(mock_coordinator, "dev-test", sensors_by_key["gallons_today"])
     assert gallons_today.native_value == 12.5
+
 
     room_humidity = StreamlabsSensor(mock_coordinator, "dev-test", sensors_by_key["room_humidity"])
     assert room_humidity.native_value == 45.0

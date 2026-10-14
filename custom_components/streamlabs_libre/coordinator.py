@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 from typing import Any, Dict, List, Optional, Set
 
@@ -39,6 +39,9 @@ class StreamLabsDeviceData:
     room_humidity: Optional[float] = None
     water_pressure: Optional[float] = None
     water_temp: Optional[float] = None
+    yearly_used_since: Optional[str] = None
+    monthly_history: Optional[List[float]] = None
+
 
 
 type StreamlabsConfigEntry = ConfigEntry[StreamlabsCoordinator]
@@ -170,9 +173,27 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
                     except (ValueError, TypeError):
                         pass
 
-        # 4. Fallback for timeseries array {"data": [{"volume": ...}]}
-        if daily == 0.0 and "data" in usage_data and isinstance(usage_data["data"], list):
-            daily = sum(float(pt.get("volume", 0.0) or 0.0) for pt in usage_data["data"] if isinstance(pt, dict))
+        # 4. Timeseries array check: {"data": [...]}
+        if "data" in usage_data and isinstance(usage_data["data"], list):
+            # Check for list of numbers (floats/ints) from rolling history endpoints
+            num_items = [
+                float(x) for x in usage_data["data"] if isinstance(x, (int, float))
+            ]
+            if num_items:
+                interval = str(usage_data.get("interval", "")).lower()
+                if interval == "month" and yearly == 0.0:
+                    yearly = round(sum(num_items), 1)
+                elif interval == "day" and monthly == 0.0:
+                    monthly = round(sum(num_items), 1)
+                elif interval == "hour" and daily == 0.0:
+                    daily = round(sum(num_items), 1)
+            elif daily == 0.0:
+                # Dict items with "volume"
+                daily = sum(
+                    float(pt.get("volume", 0.0) or 0.0)
+                    for pt in usage_data["data"]
+                    if isinstance(pt, dict)
+                )
 
         # 5. Logical consistency fallback:
         # A full calendar year's water usage cannot be less than the current month's usage.
@@ -202,12 +223,50 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
             daily_usage = 0.0
             monthly_usage = 0.0
             yearly_usage = 0.0
+            yearly_used_since: Optional[str] = None
+            monthly_history: Optional[List[float]] = None
+
             try:
                 usage_resp = self.client.get_water_usage(device_id)
                 daily_usage, monthly_usage, yearly_usage = self._extract_usage(usage_resp)
             except Exception as err:
                 _LOGGER.debug(
                     "Could not fetch detailed water usage for device %s: %s",
+                    device_id,
+                    err,
+                )
+
+            # In the StreamLabs mobile app, yearly usage and the 13-month bar chart
+            # are retrieved via: GET /devices/{device_id}/water/{yyyy}?rolling=true
+            try:
+                current_year = datetime.now().strftime("%Y")
+                year_history = self.client.get_water_usage(
+                    device_id, period=current_year, rolling=True
+                )
+                if isinstance(year_history, dict) and "data" in year_history:
+                    raw_data = year_history["data"]
+                    if isinstance(raw_data, list) and raw_data:
+                        float_data = [
+                            float(x) for x in raw_data if isinstance(x, (int, float))
+                        ]
+                        if float_data:
+                            monthly_history = float_data
+                            # In the mobile app, WaterUsage.total() is the sum of rolling monthly totals
+                            rolling_total = sum(float_data)
+                            if rolling_total > 0:
+                                yearly_usage = round(rolling_total, 1)
+
+                    start_time = year_history.get("startTime")
+                    if isinstance(start_time, (int, float)) and start_time > 0:
+                        yearly_used_since = datetime.fromtimestamp(
+                            start_time, timezone.utc
+                        ).strftime("%b, %Y")
+                    else:
+                        one_year_ago = datetime.now() - timedelta(days=365)
+                        yearly_used_since = one_year_ago.strftime("%b, %Y")
+            except Exception as err:
+                _LOGGER.debug(
+                    "Could not fetch rolling yearly water usage for device %s: %s",
                     device_id,
                     err,
                 )
@@ -289,6 +348,9 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
                 room_humidity=room_humidity,
                 water_pressure=water_pressure,
                 water_temp=water_temp,
+                yearly_used_since=yearly_used_since,
+                monthly_history=monthly_history,
             )
+
 
         return devices_data

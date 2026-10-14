@@ -218,17 +218,42 @@ class StreamLabsClient:
         except requests.RequestException as err:
             raise StreamLabsConnectionError(f"Failed to update monitoring mode: {err}") from err
 
-    def get_water_usage(self, device_id: str, date_str: Optional[str] = None) -> Dict[str, Any]:
-        """Retrieve volumetric water consumption (comparative day, week, month, year totals)."""
+    def get_water_usage(
+        self,
+        device_id: str,
+        date_str: Optional[str] = None,
+        period: Optional[str] = None,
+        rolling: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """Retrieve volumetric water consumption (comparative day, week, month, year totals, or rolling history)."""
         self._ensure_authenticated()
-        url = f"{BASE_URL}/devices/{device_id}/water"
-        params = {"date": date_str} if date_str else None
+        if period:
+            url = f"{BASE_URL}/devices/{device_id}/water/{period}"
+        else:
+            url = f"{BASE_URL}/devices/{device_id}/water"
+
+        params: Dict[str, Any] = {}
+        if date_str:
+            params["date"] = date_str
+        if rolling is not None:
+            params["rolling"] = "true" if rolling else "false"
+
         try:
-            resp = self.session.get(url, params=params, timeout=15)
+            resp = self.session.get(url, params=params or None, timeout=15)
             resp.raise_for_status()
             return resp.json()
         except requests.RequestException as err:
             raise StreamLabsConnectionError(f"Failed to fetch water usage: {err}") from err
+
+    def get_water_usage_history(
+        self,
+        device_id: str,
+        period: str,
+        rolling: bool = True,
+    ) -> Dict[str, Any]:
+        """Retrieve time-series water usage history (e.g. past 13 months rolling total for year)."""
+        return self.get_water_usage(device_id, period=period, rolling=rolling)
+
 
     def send_command(
         self,

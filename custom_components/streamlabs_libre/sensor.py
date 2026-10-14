@@ -30,6 +30,7 @@ class StreamlabsSensorEntityDescription(SensorEntityDescription):
     """Streamlabs sensor entity description."""
 
     value_fn: Callable[[StreamLabsDeviceData], StateType]
+    extra_attributes_fn: Optional[Callable[[StreamLabsDeviceData], Optional[Dict[str, Any]]]] = None
 
 
 SENSORS: tuple[StreamlabsSensorEntityDescription, ...] = (
@@ -62,7 +63,16 @@ SENSORS: tuple[StreamlabsSensorEntityDescription, ...] = (
         state_class=SensorStateClass.TOTAL,
         suggested_display_precision=1,
         value_fn=lambda data: data.yearly_usage,
+        extra_attributes_fn=lambda data: {
+            k: v
+            for k, v in {
+                "used_since": data.yearly_used_since,
+                "monthly_history": data.monthly_history,
+            }.items()
+            if v is not None
+        } or None,
     ),
+
     StreamlabsSensorEntityDescription(
         key="gallons_today",
         name="Gallons today",
@@ -158,3 +168,14 @@ class StreamlabsSensor(StreamlabsBaseEntity, SensorEntity):
         if not data:
             return None
         return self.entity_description.value_fn(data)
+
+    @property
+    def extra_state_attributes(self) -> Optional[Dict[str, Any]]:
+        """Return extra state attributes."""
+        if not self.entity_description.extra_attributes_fn:
+            return None
+        data = self.device_data
+        if not data:
+            return None
+        return self.entity_description.extra_attributes_fn(data)
+

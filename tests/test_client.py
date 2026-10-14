@@ -169,6 +169,26 @@ def test_get_water_usage_no_date(client, mock_cognito):
         )
 
 
+def test_get_water_usage_rolling_history(client, mock_cognito):
+    with patch.object(client.session, "get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {
+            "tz": "America/Los_Angeles",
+            "unit": "gal",
+            "interval": "month",
+            "data": [2500.0, 3100.0, 4227.0],
+        }
+        result = client.get_water_usage_history("dev-1", "2026", rolling=True)
+        assert result["interval"] == "month"
+        assert sum(result["data"]) == 9827.0
+        mock_get.assert_called_once_with(
+            "https://api.platform.streamlabs.io/devices/dev-1/water/2026",
+            params={"rolling": "true"},
+            timeout=15,
+        )
+
+
+
 def test_send_command(client, mock_cognito):
     with patch.object(client.session, "post") as mock_post:
         mock_post.return_value.status_code = 200

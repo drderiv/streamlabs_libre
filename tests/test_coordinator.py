@@ -177,3 +177,54 @@ def test_coordinator_environmental_telemetry(mock_hass, mock_client):
     assert dev.water_pressure == 58.0
     assert dev.water_temp == 65.0
 
+
+def test_coordinator_rolling_yearly_usage(mock_hass, mock_client):
+    entry = MagicMock()
+    entry.data = {}
+    coordinator = StreamlabsCoordinator(mock_hass, entry, mock_client)
+
+    mock_client.get_status.return_value = {
+        "devices": [
+            {
+                "location_id": "loc-1",
+                "location_name": "Main Home",
+                "device_id": "dev-01",
+                "device_name": "Main Valve",
+                "connected": True,
+                "flowing": False,
+                "mode": "home",
+                "has_valve": True,
+                "valve_position": "open",
+                "gallons_today": 12.0,
+            }
+        ]
+    }
+    mock_client.get_device.return_value = {"deviceId": "dev-01"}
+
+    def mock_get_water_usage(device_id, date_str=None, period=None, rolling=None):
+        if period is not None and rolling is True:
+            return {
+                "tz": "America/Los_Angeles",
+                "unit": "gal",
+                "startTime": 1728864000,
+                "interval": "month",
+                "data": [
+                    3000.0, 3100.0, 3200.0, 2900.0, 3050.0, 3150.0,
+                    3300.0, 3100.0, 3000.0, 3200.0, 3100.0, 2800.0, 2927.0,
+                ],
+            }
+        return {"today": 12.0, "thisMonth": 2927.0, "thisYear": 0.0}
+
+    mock_client.get_water_usage.side_effect = mock_get_water_usage
+
+    data = coordinator._update_data()
+    assert "dev-01" in data
+    dev = data["dev-01"]
+    assert dev.daily_usage == 12.0
+    assert dev.monthly_usage == 2927.0
+    # Sum of 13 months is exactly 39827.0 (matching the app's value!)
+    assert dev.yearly_usage == 39827.0
+    assert dev.yearly_used_since is not None
+    assert len(dev.monthly_history) == 13
+
+
