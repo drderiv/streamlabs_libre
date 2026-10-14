@@ -10,9 +10,12 @@ LOGGER = logging.getLogger(__package__)
 
 # Configuration keys
 CONF_LOCATIONS: Final = "locations"
+CONF_SCAN_INTERVAL: Final = "scan_interval"
 
-# Default polling interval in seconds
+# Scan interval bounds in seconds
 DEFAULT_SCAN_INTERVAL: Final = 60
+MIN_SCAN_INTERVAL: Final = 10
+MAX_SCAN_INTERVAL: Final = 300
 
 # AWS Cognito & API defaults
 COGNITO_USER_POOL_ID: Final = "us-east-1_AxkuzXSR6"

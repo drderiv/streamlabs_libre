@@ -92,3 +92,34 @@ async def test_flow_connection_error(flow):
         )
         assert result["type"] == "form"
         assert result["errors"]["base"] == "cannot_connect"
+
+
+@pytest.mark.asyncio
+async def test_options_flow():
+    from custom_components.streamlabs_libre.config_flow import StreamlabsOptionsFlowHandler
+    from custom_components.streamlabs_libre.const import CONF_SCAN_INTERVAL
+
+    mock_entry = MagicMock()
+    mock_entry.options = {CONF_SCAN_INTERVAL: 45}
+    mock_entry.data = {}
+
+    options_flow = StreamlabsOptionsFlowHandler(mock_entry)
+
+    # Test showing options form
+    form_result = await options_flow.async_step_init()
+    assert form_result["type"] == "form"
+    assert form_result["step_id"] == "init"
+
+    # Test submitting options form
+    submit_result = await options_flow.async_step_init({CONF_SCAN_INTERVAL: 20})
+    assert submit_result["type"] == "create_entry"
+    assert submit_result["data"][CONF_SCAN_INTERVAL] == 20
+
+
+def test_async_get_options_flow():
+    from custom_components.streamlabs_libre.config_flow import StreamlabsOptionsFlowHandler
+
+    mock_entry = MagicMock()
+    handler = StreamlabsConfigFlow.async_get_options_flow(mock_entry)
+    assert isinstance(handler, StreamlabsOptionsFlowHandler)
+    assert handler.config_entry == mock_entry

@@ -12,7 +12,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .client import StreamLabsClient, StreamLabsError, extract_reading_value
-from .const import CONF_LOCATIONS, DEFAULT_SCAN_INTERVAL, DOMAIN, LOGGER
+from .const import CONF_LOCATIONS, CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL, DOMAIN, LOGGER
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,12 +56,22 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
         client: StreamLabsClient,
     ) -> None:
         """Initialize the coordinator."""
+        scan_interval = DEFAULT_SCAN_INTERVAL
+        if isinstance(getattr(config_entry, "options", None), dict):
+            scan_interval = config_entry.options.get(CONF_SCAN_INTERVAL, scan_interval)
+        elif isinstance(getattr(config_entry, "data", None), dict):
+            scan_interval = config_entry.data.get(CONF_SCAN_INTERVAL, scan_interval)
+        try:
+            scan_interval = int(scan_interval)
+        except (ValueError, TypeError):
+            scan_interval = DEFAULT_SCAN_INTERVAL
+
         super().__init__(
             hass,
             LOGGER,
             config_entry=config_entry,
             name="StreamLabs Libre",
-            update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
+            update_interval=timedelta(seconds=scan_interval),
         )
         self.client = client
         self.monitored_locations: Optional[Set[str]] = None

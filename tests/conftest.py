@@ -118,6 +118,28 @@ class ConfigFlow:
         }
 
 
+class OptionsFlow:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def async_create_entry(self, *, title: str = "", data: dict[str, Any]) -> dict[str, Any]:
+        return {"type": "create_entry", "title": title, "data": data}
+
+    def async_show_form(
+        self,
+        *,
+        step_id: str,
+        data_schema: Any = None,
+        errors: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "type": "form",
+            "step_id": step_id,
+            "data_schema": data_schema,
+            "errors": errors or {},
+        }
+
+
 # Register modules in sys.modules
 for mod in [
     "homeassistant",
@@ -175,6 +197,7 @@ class UpdateFailed(Exception):
 sys.modules["homeassistant.helpers.update_coordinator"].UpdateFailed = UpdateFailed
 
 sys.modules["homeassistant.config_entries"].ConfigFlow = ConfigFlow
+sys.modules["homeassistant.config_entries"].OptionsFlow = OptionsFlow
 sys.modules["homeassistant.config_entries"].ConfigFlowResult = dict[str, Any]
 sys.modules["homeassistant.config_entries"].ConfigEntry = MagicMock
 sys.modules["homeassistant.config_entries"].ConfigEntry.__class_getitem__ = lambda cls, item: cls

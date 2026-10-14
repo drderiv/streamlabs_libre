@@ -27,6 +27,17 @@
       "already_configured": "This StreamLabs account is already configured."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "StreamLabs Options",
+        "description": "Configure polling frequency and device settings.",
+        "data": {
+          "scan_interval": "Scan interval (seconds)"
+        }
+      }
+    }
+  },
   "entity": {
     "valve": {
       "shutoff_valve": {
