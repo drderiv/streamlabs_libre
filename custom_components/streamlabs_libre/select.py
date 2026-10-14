@@ -1,6 +1,5 @@
-"""Support for StreamLabs Monitoring Mode Select."""
-
-from __future__ import annotations
+import asyncio
+import time
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.core import HomeAssistant
@@ -35,10 +34,20 @@ class StreamlabsModeSelect(StreamlabsBaseEntity, SelectEntity):
     def __init__(self, coordinator: StreamlabsCoordinator, device_id: str) -> None:
         """Initialize the mode select entity."""
         super().__init__(coordinator, device_id, "monitoring_mode")
+        self._optimistic_mode: str | None = None
+        self._optimistic_time: float = 0.0
 
     @property
     def current_option(self) -> str | None:
         """Return the current monitoring mode."""
+        # Hold optimistic state for up to 5 seconds to absorb cloud replication lag
+        if self._optimistic_mode and (time.time() - self._optimistic_time < 5.0):
+            data = self.device_data
+            if data and data.mode and data.mode.lower() == self._optimistic_mode.lower():
+                self._optimistic_mode = None
+            else:
+                return "Away" if self._optimistic_mode.lower() == "away" else "Home"
+
         data = self.device_data
         if not data or not data.mode:
             return None
@@ -57,7 +66,24 @@ class StreamlabsModeSelect(StreamlabsBaseEntity, SelectEntity):
         if api_mode not in ("home", "away"):
             raise ValueError(f"Invalid mode selected: {option}")
 
-        await self.hass.async_add_executor_job(
-            self.coordinator.client.set_mode, self._device_id, api_mode
-        )
+        # Optimistically update local data and trigger instant UI update
+        self._optimistic_mode = api_mode
+        self._optimistic_time = time.time()
+        if self.device_data:
+            self.device_data.mode = api_mode
+        self.async_write_ha_state()
+
+        try:
+            await self.hass.async_add_executor_job(
+                self.coordinator.client.set_mode, self._device_id, api_mode
+            )
+        except Exception:
+            self._optimistic_mode = None
+            if self.device_data:
+                await self.coordinator.async_request_refresh()
+            self.async_write_ha_state()
+            raise
+
+        # Allow cloud backend to settle before requesting coordinator refresh
+        await asyncio.sleep(1.0)
         await self.coordinator.async_request_refresh()

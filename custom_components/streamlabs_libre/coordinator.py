@@ -189,6 +189,17 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
             water_pressure = extract_reading_value(raw_pressure)
             water_temp = extract_reading_value(raw_water_temp)
 
+            dev_mode = (
+                device_detail.get("mode")
+                or (device_detail.get("settings", {}).get("mode") if isinstance(device_detail.get("settings"), dict) else None)
+                or dev.get("mode")
+                or "home"
+            )
+            valve_pos = (
+                (device_detail.get("valve", {}).get("position") if isinstance(device_detail.get("valve"), dict) else None)
+                or dev.get("valve_position")
+            )
+
             devices_data[device_id] = StreamLabsDeviceData(
                 device_id=device_id,
                 device_name=dev.get("device_name") or f"StreamLabs {device_id}",
@@ -196,9 +207,9 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
                 location_name=dev.get("location_name") or "StreamLabs Location",
                 connected=bool(dev.get("connected", True)),
                 flowing=bool(dev.get("flowing", False)),
-                mode=str(dev.get("mode", "home")),
+                mode=str(dev_mode),
                 has_valve=bool(dev.get("has_valve", False)),
-                valve_position=dev.get("valve_position"),
+                valve_position=valve_pos,
                 daily_usage=daily_usage,
                 monthly_usage=monthly_usage,
                 yearly_usage=yearly_usage,

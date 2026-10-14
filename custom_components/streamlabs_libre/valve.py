@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from homeassistant.components.valve import (
@@ -63,14 +64,36 @@ class StreamlabsValve(StreamlabsBaseEntity, ValveEntity):
 
     async def async_open_valve(self) -> None:
         """Open the water valve."""
-        await self.hass.async_add_executor_job(
-            self.coordinator.client.set_valve, self._device_id, VALVE_OPEN
-        )
+        if self.device_data:
+            self.device_data.valve_position = VALVE_OPEN
+        self.async_write_ha_state()
+
+        try:
+            await self.hass.async_add_executor_job(
+                self.coordinator.client.set_valve, self._device_id, VALVE_OPEN
+            )
+        except Exception:
+            await self.coordinator.async_request_refresh()
+            self.async_write_ha_state()
+            raise
+
+        await asyncio.sleep(1.0)
         await self.coordinator.async_request_refresh()
 
     async def async_close_valve(self) -> None:
         """Close the water valve."""
-        await self.hass.async_add_executor_job(
-            self.coordinator.client.set_valve, self._device_id, VALVE_CLOSE
-        )
+        if self.device_data:
+            self.device_data.valve_position = VALVE_CLOSE
+        self.async_write_ha_state()
+
+        try:
+            await self.hass.async_add_executor_job(
+                self.coordinator.client.set_valve, self._device_id, VALVE_CLOSE
+            )
+        except Exception:
+            await self.coordinator.async_request_refresh()
+            self.async_write_ha_state()
+            raise
+
+        await asyncio.sleep(1.0)
         await self.coordinator.async_request_refresh()

@@ -33,6 +33,9 @@ class Entity:
     _attr_unique_id = None
     _attr_device_info = None
 
+    def async_write_ha_state(self) -> None:
+        pass
+
 
 class CoordinatorEntity(Entity):
     def __init__(self, coordinator: Any) -> None:
