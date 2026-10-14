@@ -249,4 +249,86 @@ def test_coordinator_rolling_yearly_usage(mock_hass, mock_client):
     assert dev2.yearly_usage == 39850.0
 
 
+def test_coordinator_dynamic_intervals_and_flow_rate(mock_hass, mock_client):
+    from datetime import timedelta
+    from custom_components.streamlabs_libre.const import (
+        CONF_WATER_OFF_INTERVAL,
+        CONF_WATER_ON_INTERVAL,
+    )
+
+    entry = MagicMock()
+    entry.options = {
+        CONF_WATER_OFF_INTERVAL: 60,
+        CONF_WATER_ON_INTERVAL: 10,
+    }
+    entry.data = {}
+    coordinator = StreamlabsCoordinator(mock_hass, entry, mock_client)
+
+    assert coordinator.scan_interval_off == 60
+    assert coordinator.scan_interval_on == 10
+    assert coordinator.update_interval == timedelta(seconds=60)
+
+    # 1. First poll: Water is OFF (flowing == False)
+    mock_client.get_status.return_value = {
+        "devices": [
+            {
+                "location_id": "loc-1",
+                "device_id": "dev-01",
+                "connected": True,
+                "flowing": False,
+                "gallons_today": 10.0,
+            }
+        ]
+    }
+    mock_client.get_water_usage.return_value = {"today": 10.0, "thisMonth": 100.0, "thisYear": 500.0}
+    mock_client.get_device.return_value = {"deviceId": "dev-01", "ambientTemp": {"currentValue": 70}}
+
+    with patch("time.monotonic", return_value=1000.0):
+        data1 = coordinator._update_data()
+
+    assert data1["dev-01"].flowing is False
+    assert data1["dev-01"].estimated_flow_rate == 0.0
+    assert coordinator.update_interval == timedelta(seconds=60)
+    assert mock_client.get_device.call_count == 1
+
+    # 2. Second poll: Water turns ON (flowing == True) - First poll transition
+    # Should establish baseline and report 0.0 gpm; interval switches to 10s
+    mock_client.get_status.return_value["devices"][0]["flowing"] = True
+    mock_client.get_water_usage.return_value["today"] = 10.2
+
+    with patch("time.monotonic", return_value=1060.0):
+        data2 = coordinator._update_data()
+
+    assert data2["dev-01"].flowing is True
+    assert data2["dev-01"].estimated_flow_rate == 0.0  # Baseline established
+    assert coordinator.update_interval == timedelta(seconds=10)
+    # 60s elapsed since t=1000.0, so get_device was called again
+    assert mock_client.get_device.call_count == 2
+
+    # 3. Third poll: Water still ON 10s later; daily usage increased by 0.5 gal
+    # delta_time = 10s = 10/60 min = 0.1667 min. delta_gallons = 0.5 gal.
+    # gpm = 0.5 / (10/60) = 3.0 gpm
+    mock_client.get_water_usage.return_value["today"] = 10.7
+
+    with patch("time.monotonic", return_value=1070.0):
+        data3 = coordinator._update_data()
+
+    assert data3["dev-01"].flowing is True
+    assert data3["dev-01"].estimated_flow_rate == 3.0
+    assert coordinator.update_interval == timedelta(seconds=10)
+    # Only 10s elapsed since t=1060.0 (< 60s waterOff interval), so get_device was CACHED!
+    assert mock_client.get_device.call_count == 2
+
+    # 4. Fourth poll: Water turns OFF (flowing == False)
+    mock_client.get_status.return_value["devices"][0]["flowing"] = False
+    mock_client.get_water_usage.return_value["today"] = 11.0
+
+    with patch("time.monotonic", return_value=1080.0):
+        data4 = coordinator._update_data()
+
+    assert data4["dev-01"].flowing is False
+    assert data4["dev-01"].estimated_flow_rate == 0.0
+    assert coordinator.update_interval == timedelta(seconds=60)
+
+
 

@@ -21,6 +21,14 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
 
+try:
+    from homeassistant.const import UnitOfVolumeFlowRate
+    UNIT_FLOW_GPM = UnitOfVolumeFlowRate.GALLONS_PER_MINUTE
+except (ImportError, AttributeError):
+    UNIT_FLOW_GPM = "gal/min"
+
+VOLUME_FLOW_RATE_DEVICE_CLASS = getattr(SensorDeviceClass, "VOLUME_FLOW_RATE", "volume_flow_rate")
+
 from .coordinator import StreamlabsConfigEntry, StreamlabsCoordinator, StreamLabsDeviceData
 from .entity import StreamlabsBaseEntity
 
@@ -34,6 +42,16 @@ class StreamlabsSensorEntityDescription(SensorEntityDescription):
 
 
 SENSORS: tuple[StreamlabsSensorEntityDescription, ...] = (
+    StreamlabsSensorEntityDescription(
+        key="estimated_flow_rate",
+        name="Estimated flow rate",
+        translation_key="estimated_flow_rate",
+        native_unit_of_measurement=UNIT_FLOW_GPM,
+        device_class=VOLUME_FLOW_RATE_DEVICE_CLASS,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=lambda data: data.estimated_flow_rate,
+    ),
     StreamlabsSensorEntityDescription(
         key="daily_usage",
         name="Daily water usage",

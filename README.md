@@ -20,15 +20,19 @@ The official Home Assistant core integration lacks shutoff valve actuation and o
   - **Water Pressure** (`sensor.*_water_pressure`, psi)
   - **Water Temperature** (`sensor.*_water_temperature`, °F / °C)
 - 💧 **Water Usage & Consumption Sensors (`sensor`):** 
+  - **Estimated flow rate** (`sensor.*_estimated_flow_rate`, gpm / gal/min)
   - Daily water consumption (gallons)
   - Monthly water consumption (gallons)
-  - Yearly water consumption (gallons)
+  - Yearly water consumption (gallons, matching mobile app 13-month rolling history)
   - Location water usage today
 - ⚡ **Binary Sensors (`binary_sensor`):**
   - Instantaneous water flow detection (`mdi:water-pump`)
   - Cloud connection status
   - Away mode state indicator (disabled by default in favor of the primary `select` control)
-- ⚙️ **Configurable Polling Options Flow:** Adjust the update interval dynamically from 10 to 300 seconds (default: 60s) directly via **Configure** in Home Assistant.
+- ⚙️ **Dual-Rate Dynamic Polling Options Flow:**
+  - **Water off interval**: Polling frequency when water is idle (10s–300s, default: 60s) to keep cloud traffic light.
+  - **Water on interval**: Rapid polling frequency when water is actively running (10s–300s, default: 15s) to dynamically measure flow rate in real time.
+  - **Smart Cache Optimization**: During rapid water-on polling, heavy historical and environmental endpoints are cached, limiting active bursts to just 2 lightweight requests per poll.
 - 🛠️ **Diagnostic Services:** Trigger remote calibration or routine drip detection runs (`run_drip_detect`, `calibrate`).
 - 📍 **Multi-Location Support:** Seamlessly choose which locations to monitor during setup if your account has multiple homes or properties.
 - 🔐 **AWS Cognito SRP Flow:** Direct, decoupled token exchange using `pycognito` and automated 3600-second session renewals.
@@ -64,13 +68,20 @@ The official Home Assistant core integration lacks shutoff valve actuation and o
 4. If your account contains multiple locations, select the location(s) you wish to monitor.
 5. The devices, valve entities, and telemetry sensors will automatically appear under your Home Assistant devices.
 
-### Polling Frequency (Options Flow)
+### Dual Polling Frequencies & Flow Rate Estimation (Options Flow)
 
-To customize how frequently Home Assistant polls the StreamLabs cloud for telemetry updates:
+To customize how frequently Home Assistant polls the StreamLabs cloud and configure real-time flow estimation:
 1. Go to **Settings** -> **Devices & Services** -> **StreamLabs Libre**.
 2. Click **Configure** on the integration entry.
-3. Set your desired **Scan interval (seconds)** (between `10` and `300` seconds; defaults to `60` seconds).
-4. Click **Submit**—Home Assistant will immediately reload the coordinator with the new polling interval.
+3. Set your desired intervals:
+   - **Water off polling interval (seconds)**: Used when water is idle (`10` to `300` seconds; defaults to `60` seconds).
+   - **Water on polling interval (seconds)**: Used when water is running (`10` to `300` seconds; defaults to `15` seconds).
+4. Click **Submit**—Home Assistant will immediately reload the coordinator.
+
+**How Flow Rate Estimation Works**:
+When water starts flowing, the coordinator dynamically switches to the rapid **Water on interval**. On the first poll of the event, it captures the baseline. On subsequent rapid polls while water is running, it calculates the real-time flow rate from the change in daily water usage over the elapsed interval:
+$$\text{Estimated GPM} = \frac{\Delta\text{gallons}}{\Delta t_\text{seconds} / 60}$$
+When the water is turned off, the sensor immediately resets to `0.0 gpm` and the coordinator returns to the gentle **Water off interval**.
 
 
 ---

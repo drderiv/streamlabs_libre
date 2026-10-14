@@ -24,7 +24,11 @@ from .client import (
 from .const import (
     CONF_LOCATIONS,
     CONF_SCAN_INTERVAL,
+    CONF_WATER_OFF_INTERVAL,
+    CONF_WATER_ON_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_WATER_OFF_INTERVAL,
+    DEFAULT_WATER_ON_INTERVAL,
     DOMAIN,
     LOGGER,
     MAX_SCAN_INTERVAL,
@@ -175,9 +179,20 @@ class StreamlabsOptionsFlowHandler(OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        current_interval = self.config_entry.options.get(
+        options = self.config_entry.options or {}
+        data = self.config_entry.data or {}
+
+        legacy_interval = options.get(
             CONF_SCAN_INTERVAL,
-            self.config_entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+            data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+        )
+        current_off = options.get(
+            CONF_WATER_OFF_INTERVAL,
+            data.get(CONF_WATER_OFF_INTERVAL, legacy_interval),
+        )
+        current_on = options.get(
+            CONF_WATER_ON_INTERVAL,
+            data.get(CONF_WATER_ON_INTERVAL, DEFAULT_WATER_ON_INTERVAL),
         )
 
         return self.async_show_form(
@@ -185,8 +200,15 @@ class StreamlabsOptionsFlowHandler(OptionsFlow):
             data_schema=vol.Schema(
                 {
                     vol.Required(
-                        CONF_SCAN_INTERVAL,
-                        default=current_interval,
+                        CONF_WATER_OFF_INTERVAL,
+                        default=current_off,
+                    ): vol.All(
+                        vol.Coerce(int),
+                        vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
+                    ),
+                    vol.Required(
+                        CONF_WATER_ON_INTERVAL,
+                        default=current_on,
                     ): vol.All(
                         vol.Coerce(int),
                         vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),

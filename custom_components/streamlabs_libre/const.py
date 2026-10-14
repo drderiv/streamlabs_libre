@@ -10,10 +10,14 @@ LOGGER = logging.getLogger(__package__)
 
 # Configuration keys
 CONF_LOCATIONS: Final = "locations"
-CONF_SCAN_INTERVAL: Final = "scan_interval"
+CONF_SCAN_INTERVAL: Final = "scan_interval"  # Legacy single-interval key for backwards compatibility
+CONF_WATER_OFF_INTERVAL: Final = "water_off_interval"
+CONF_WATER_ON_INTERVAL: Final = "water_on_interval"
 
 # Scan interval bounds in seconds
 DEFAULT_SCAN_INTERVAL: Final = 60
+DEFAULT_WATER_OFF_INTERVAL: Final = 60
+DEFAULT_WATER_ON_INTERVAL: Final = 15
 MIN_SCAN_INTERVAL: Final = 10
 MAX_SCAN_INTERVAL: Final = 300
 

@@ -16,7 +16,11 @@ from .client import StreamLabsClient, StreamLabsError, extract_reading_value
 from .const import (
     CONF_LOCATIONS,
     CONF_SCAN_INTERVAL,
+    CONF_WATER_OFF_INTERVAL,
+    CONF_WATER_ON_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_WATER_OFF_INTERVAL,
+    DEFAULT_WATER_ON_INTERVAL,
     DOMAIN,
     LOGGER,
     YEARLY_CACHE_INTERVAL,
@@ -44,6 +48,7 @@ class StreamLabsDeviceData:
     yearly_usage: float
     gallons_today: float
     raw_status: Dict[str, Any]
+    estimated_flow_rate: float = 0.0
     room_temp: Optional[float] = None
     room_humidity: Optional[float] = None
     water_pressure: Optional[float] = None
@@ -68,22 +73,38 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
         client: StreamLabsClient,
     ) -> None:
         """Initialize the coordinator."""
-        scan_interval = DEFAULT_SCAN_INTERVAL
-        if isinstance(getattr(config_entry, "options", None), dict):
-            scan_interval = config_entry.options.get(CONF_SCAN_INTERVAL, scan_interval)
-        elif isinstance(getattr(config_entry, "data", None), dict):
-            scan_interval = config_entry.data.get(CONF_SCAN_INTERVAL, scan_interval)
+        options = getattr(config_entry, "options", None) or {}
+        data = getattr(config_entry, "data", None) or {}
+
+        legacy_interval = options.get(
+            CONF_SCAN_INTERVAL, data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+        )
         try:
-            scan_interval = int(scan_interval)
+            self.scan_interval_off = int(
+                options.get(
+                    CONF_WATER_OFF_INTERVAL,
+                    data.get(CONF_WATER_OFF_INTERVAL, legacy_interval),
+                )
+            )
         except (ValueError, TypeError):
-            scan_interval = DEFAULT_SCAN_INTERVAL
+            self.scan_interval_off = DEFAULT_WATER_OFF_INTERVAL
+
+        try:
+            self.scan_interval_on = int(
+                options.get(
+                    CONF_WATER_ON_INTERVAL,
+                    data.get(CONF_WATER_ON_INTERVAL, DEFAULT_WATER_ON_INTERVAL),
+                )
+            )
+        except (ValueError, TypeError):
+            self.scan_interval_on = DEFAULT_WATER_ON_INTERVAL
 
         super().__init__(
             hass,
             LOGGER,
             config_entry=config_entry,
             name="StreamLabs Libre",
-            update_interval=timedelta(seconds=scan_interval),
+            update_interval=timedelta(seconds=self.scan_interval_off),
         )
         self.client = client
         self.monitored_locations: Optional[Set[str]] = None
@@ -91,6 +112,8 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
         if locations_cfg:
             self.monitored_locations = set(locations_cfg)
         self._yearly_cache: Dict[str, Dict[str, Any]] = {}
+        self._telemetry_cache: Dict[str, Dict[str, Any]] = {}
+        self._flow_tracking: Dict[str, Dict[str, Any]] = {}
 
 
     async def _async_update_data(self) -> Dict[str, StreamLabsDeviceData]:
@@ -312,15 +335,73 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
                 daily_usage = gallons_today
 
             # Fetch detailed device telemetry (ambient temp, humidity, water pressure, water temp)
+            # To minimize requests when polling at rapid waterOn rates, Endpoint #4 is cached
+            # and refreshed at the waterOff interval (e.g. 60s).
             device_detail: Dict[str, Any] = {}
-            try:
-                device_detail = self.client.get_device(device_id)
-            except Exception as err:
-                _LOGGER.debug(
-                    "Could not fetch detailed telemetry for device %s: %s",
-                    device_id,
-                    err,
-                )
+            cached_telemetry = self._telemetry_cache.get(device_id)
+            if (
+                cached_telemetry is not None
+                and (now_mono - cached_telemetry.get("last_fetched", 0)) < self.scan_interval_off
+            ):
+                device_detail = cached_telemetry.get("data", {})
+            else:
+                try:
+                    device_detail = self.client.get_device(device_id)
+                    self._telemetry_cache[device_id] = {
+                        "last_fetched": now_mono,
+                        "data": device_detail,
+                    }
+                except Exception as err:
+                    _LOGGER.debug(
+                        "Could not fetch detailed telemetry for device %s: %s",
+                        device_id,
+                        err,
+                    )
+                    if cached_telemetry:
+                        device_detail = cached_telemetry.get("data", {})
+
+            # Calculate estimated flow rate (gpm) between consecutive waterOn polls
+            is_flowing = bool(dev.get("flowing", False))
+            tracking = self._flow_tracking.setdefault(
+                device_id,
+                {
+                    "prev_flowing": False,
+                    "baseline_usage": None,
+                    "baseline_time": None,
+                    "estimated_flow_rate": 0.0,
+                },
+            )
+
+            if not is_flowing:
+                tracking["prev_flowing"] = False
+                tracking["baseline_usage"] = None
+                tracking["baseline_time"] = None
+                tracking["estimated_flow_rate"] = 0.0
+            else:
+                if not tracking["prev_flowing"] or tracking["baseline_usage"] is None:
+                    # First poll of water-on event: establish baseline
+                    tracking["prev_flowing"] = True
+                    tracking["baseline_usage"] = daily_usage
+                    tracking["baseline_time"] = now_mono
+                    tracking["estimated_flow_rate"] = 0.0
+                else:
+                    # Subsequent poll while water is still running: calculate rate
+                    prev_usage = tracking["baseline_usage"]
+                    prev_time = tracking["baseline_time"]
+                    delta_time = now_mono - prev_time
+                    delta_gallons = daily_usage - prev_usage
+
+                    if delta_time > 0 and delta_gallons >= 0:
+                        delta_minutes = delta_time / 60.0
+                        tracking["estimated_flow_rate"] = round(delta_gallons / delta_minutes, 1)
+                    elif delta_gallons < 0:
+                        # Daily rollover counter reset
+                        tracking["estimated_flow_rate"] = 0.0
+
+                    tracking["baseline_usage"] = daily_usage
+                    tracking["baseline_time"] = now_mono
+
+            estimated_flow_rate = tracking["estimated_flow_rate"]
 
             raw_ambient = (
                 device_detail.get("ambientTemp")
@@ -370,7 +451,7 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
                 location_id=loc_id or "unknown",
                 location_name=dev.get("location_name") or "StreamLabs Location",
                 connected=bool(dev.get("connected", True)),
-                flowing=bool(dev.get("flowing", False)),
+                flowing=is_flowing,
                 mode=str(dev_mode),
                 has_valve=bool(dev.get("has_valve", False)),
                 valve_position=valve_pos,
@@ -379,6 +460,7 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
                 yearly_usage=yearly_usage,
                 gallons_today=gallons_today,
                 raw_status=dev,
+                estimated_flow_rate=estimated_flow_rate,
                 room_temp=room_temp,
                 room_humidity=room_humidity,
                 water_pressure=water_pressure,
@@ -387,5 +469,19 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
                 monthly_history=monthly_history,
             )
 
+        # Dynamically adjust polling interval:
+        # If any monitored device is currently flowing, poll at water_on_interval;
+        # otherwise, poll at water_off_interval.
+        any_flowing = any(d.flowing for d in devices_data.values())
+        target_interval = timedelta(
+            seconds=self.scan_interval_on if any_flowing else self.scan_interval_off
+        )
+        if self.update_interval != target_interval:
+            self.update_interval = target_interval
+            _LOGGER.debug(
+                "Adjusted polling interval to %s (flowing=%s)",
+                target_interval,
+                any_flowing,
+            )
 
         return devices_data

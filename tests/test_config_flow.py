@@ -97,10 +97,17 @@ async def test_flow_connection_error(flow):
 @pytest.mark.asyncio
 async def test_options_flow():
     from custom_components.streamlabs_libre.config_flow import StreamlabsOptionsFlowHandler
-    from custom_components.streamlabs_libre.const import CONF_SCAN_INTERVAL
+    from custom_components.streamlabs_libre.const import (
+        CONF_SCAN_INTERVAL,
+        CONF_WATER_OFF_INTERVAL,
+        CONF_WATER_ON_INTERVAL,
+    )
 
     mock_entry = MagicMock()
-    mock_entry.options = {CONF_SCAN_INTERVAL: 45}
+    mock_entry.options = {
+        CONF_WATER_OFF_INTERVAL: 45,
+        CONF_WATER_ON_INTERVAL: 15,
+    }
     mock_entry.data = {}
 
     options_flow = StreamlabsOptionsFlowHandler()
@@ -112,9 +119,13 @@ async def test_options_flow():
     assert form_result["step_id"] == "init"
 
     # Test submitting options form
-    submit_result = await options_flow.async_step_init({CONF_SCAN_INTERVAL: 20})
+    submit_result = await options_flow.async_step_init({
+        CONF_WATER_OFF_INTERVAL: 90,
+        CONF_WATER_ON_INTERVAL: 10,
+    })
     assert submit_result["type"] == "create_entry"
-    assert submit_result["data"][CONF_SCAN_INTERVAL] == 20
+    assert submit_result["data"][CONF_WATER_OFF_INTERVAL] == 90
+    assert submit_result["data"][CONF_WATER_ON_INTERVAL] == 10
 
 
 def test_async_get_options_flow():

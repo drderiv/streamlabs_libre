@@ -31,9 +31,10 @@
     "step": {
       "init": {
         "title": "StreamLabs Options",
-        "description": "Configure polling frequency and device settings.",
+        "description": "Configure polling frequencies and device settings.",
         "data": {
-          "scan_interval": "Scan interval (seconds)"
+          "water_off_interval": "Water off polling interval (seconds)",
+          "water_on_interval": "Water on polling interval (seconds)"
         }
       }
     }
@@ -88,6 +89,9 @@
       },
       "water_temp": {
         "name": "Water temp"
+      },
+      "estimated_flow_rate": {
+        "name": "Estimated flow rate"
       }
     }
   },

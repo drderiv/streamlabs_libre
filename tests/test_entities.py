@@ -138,6 +138,14 @@ def test_sensors(mock_coordinator):
     assert water_temp.native_value == 68.0
     assert water_temp.available is True
 
+    flow_rate = StreamlabsSensor(mock_coordinator, "dev-test", sensors_by_key["estimated_flow_rate"])
+    assert flow_rate.native_value == 0.0
+    assert flow_rate.available is True
+    assert flow_rate.entity_description.native_unit_of_measurement == "gal/min"
+
+    mock_coordinator.data["dev-test"].estimated_flow_rate = 2.4
+    assert flow_rate.native_value == 2.4
+
     # Test unavailable when sensor reading is None
     mock_coordinator.data["dev-test"].room_temp = None
     assert room_temp.native_value is None
