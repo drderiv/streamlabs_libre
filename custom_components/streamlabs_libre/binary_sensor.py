@@ -27,18 +27,21 @@ class StreamlabsBinarySensorEntityDescription(BinarySensorEntityDescription):
 BINARY_SENSORS: tuple[StreamlabsBinarySensorEntityDescription, ...] = (
     StreamlabsBinarySensorEntityDescription(
         key="flowing",
+        name="Water flowing",
         translation_key="flowing",
         icon="mdi:water-pump",
         is_on_fn=lambda data: data.flowing,
     ),
     StreamlabsBinarySensorEntityDescription(
         key="connectivity",
+        name="Connectivity",
         translation_key="connectivity",
         device_class=BinarySensorDeviceClass.CONNECTIVITY,
         is_on_fn=lambda data: data.connected,
     ),
     StreamlabsBinarySensorEntityDescription(
         key="away_mode",
+        name="Away mode",
         translation_key="away_mode",
         icon="mdi:home-export-outline",
         is_on_fn=lambda data: data.mode == "away",

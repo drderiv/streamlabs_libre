@@ -47,7 +47,7 @@
         "name": "Water flowing"
       },
       "connectivity": {
-        "name": "Connection status"
+        "name": "Connectivity"
       },
       "away_mode": {
         "name": "Away mode"

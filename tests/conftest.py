@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 @dataclass(frozen=True, kw_only=True)
 class EntityDescription:
     key: str
+    name: str | None = None
     translation_key: str | None = None
     icon: str | None = None
     device_class: Any = None

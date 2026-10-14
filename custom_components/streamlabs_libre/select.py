@@ -28,8 +28,9 @@ async def async_setup_entry(
 class StreamlabsModeSelect(StreamlabsBaseEntity, SelectEntity):
     """Select entity for StreamLabs Home / Away monitoring mode."""
 
+    _attr_name = "Monitoring mode"
     _attr_translation_key = "monitoring_mode"
-    _attr_options = VALID_MODES
+    _attr_options = ["Home", "Away"]
 
     def __init__(self, coordinator: StreamlabsCoordinator, device_id: str) -> None:
         """Initialize the mode select entity."""
@@ -39,23 +40,24 @@ class StreamlabsModeSelect(StreamlabsBaseEntity, SelectEntity):
     def current_option(self) -> str | None:
         """Return the current monitoring mode."""
         data = self.device_data
-        if not data:
+        if not data or not data.mode:
             return None
-        return data.mode
+        return "Away" if data.mode.lower() == "away" else "Home"
 
     @property
     def icon(self) -> str:
         """Return icon reflecting current mode."""
-        if self.current_option == MODE_AWAY:
+        if self.current_option == "Away":
             return "mdi:home-export-outline"
         return "mdi:home"
 
     async def async_select_option(self, option: str) -> None:
         """Change the monitoring mode."""
-        if option not in VALID_MODES:
+        api_mode = option.lower()
+        if api_mode not in ("home", "away"):
             raise ValueError(f"Invalid mode selected: {option}")
 
         await self.hass.async_add_executor_job(
-            self.coordinator.client.set_mode, self._device_id, option
+            self.coordinator.client.set_mode, self._device_id, api_mode
         )
         await self.coordinator.async_request_refresh()

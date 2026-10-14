@@ -74,11 +74,11 @@ async def test_valve_actions(mock_coordinator):
 
 def test_mode_select_properties(mock_coordinator):
     mode_sel = StreamlabsModeSelect(mock_coordinator, "dev-test")
-    assert mode_sel.current_option == "home"
+    assert mode_sel.current_option == "Home"
     assert mode_sel.icon == "mdi:home"
 
     mock_coordinator.data["dev-test"].mode = "away"
-    assert mode_sel.current_option == "away"
+    assert mode_sel.current_option == "Away"
     assert mode_sel.icon == "mdi:home-export-outline"
 
 
@@ -88,7 +88,7 @@ async def test_mode_select_action(mock_coordinator):
     mode_sel.hass = MagicMock()
     mode_sel.hass.async_add_executor_job = AsyncMock(side_effect=lambda func, *args: func(*args))
 
-    await mode_sel.async_select_option("away")
+    await mode_sel.async_select_option("Away")
     mock_coordinator.client.set_mode.assert_called_with("dev-test", "away")
     mock_coordinator.async_request_refresh.assert_called()
 

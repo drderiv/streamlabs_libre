@@ -30,6 +30,7 @@ class StreamlabsSensorEntityDescription(SensorEntityDescription):
 SENSORS: tuple[StreamlabsSensorEntityDescription, ...] = (
     StreamlabsSensorEntityDescription(
         key="daily_usage",
+        name="Daily water usage",
         translation_key="daily_usage",
         native_unit_of_measurement=UnitOfVolume.GALLONS,
         device_class=SensorDeviceClass.WATER,
@@ -39,6 +40,7 @@ SENSORS: tuple[StreamlabsSensorEntityDescription, ...] = (
     ),
     StreamlabsSensorEntityDescription(
         key="monthly_usage",
+        name="Monthly water usage",
         translation_key="monthly_usage",
         native_unit_of_measurement=UnitOfVolume.GALLONS,
         device_class=SensorDeviceClass.WATER,
@@ -48,6 +50,7 @@ SENSORS: tuple[StreamlabsSensorEntityDescription, ...] = (
     ),
     StreamlabsSensorEntityDescription(
         key="yearly_usage",
+        name="Yearly water usage",
         translation_key="yearly_usage",
         native_unit_of_measurement=UnitOfVolume.GALLONS,
         device_class=SensorDeviceClass.WATER,
@@ -57,6 +60,7 @@ SENSORS: tuple[StreamlabsSensorEntityDescription, ...] = (
     ),
     StreamlabsSensorEntityDescription(
         key="gallons_today",
+        name="Gallons today",
         translation_key="gallons_today",
         native_unit_of_measurement=UnitOfVolume.GALLONS,
         device_class=SensorDeviceClass.WATER,
