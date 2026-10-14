@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import logging
+import time
 from typing import Any, Dict, List, Optional, Set
 
 from homeassistant.config_entries import ConfigEntry
@@ -12,9 +13,17 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .client import StreamLabsClient, StreamLabsError, extract_reading_value
-from .const import CONF_LOCATIONS, CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL, DOMAIN, LOGGER
+from .const import (
+    CONF_LOCATIONS,
+    CONF_SCAN_INTERVAL,
+    DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
+    LOGGER,
+    YEARLY_CACHE_INTERVAL,
+)
 
 _LOGGER = logging.getLogger(__name__)
+
 
 
 @dataclass(slots=True)
@@ -81,6 +90,8 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
         locations_cfg = config_entry.data.get(CONF_LOCATIONS)
         if locations_cfg:
             self.monitored_locations = set(locations_cfg)
+        self._yearly_cache: Dict[str, Dict[str, Any]] = {}
+
 
     async def _async_update_data(self) -> Dict[str, StreamLabsDeviceData]:
         """Fetch latest data from StreamLabs."""
@@ -238,38 +249,62 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
 
             # In the StreamLabs mobile app, yearly usage and the 13-month bar chart
             # are retrieved via: GET /devices/{device_id}/water/{yyyy}?rolling=true
-            try:
-                current_year = datetime.now().strftime("%Y")
-                year_history = self.client.get_water_usage(
-                    device_id, period=current_year, rolling=True
-                )
-                if isinstance(year_history, dict) and "data" in year_history:
-                    raw_data = year_history["data"]
-                    if isinstance(raw_data, list) and raw_data:
-                        float_data = [
-                            float(x) for x in raw_data if isinstance(x, (int, float))
-                        ]
-                        if float_data:
-                            monthly_history = float_data
-                            # In the mobile app, WaterUsage.total() is the sum of rolling monthly totals
-                            rolling_total = sum(float_data)
-                            if rolling_total > 0:
-                                yearly_usage = round(rolling_total, 1)
+            # To minimize requests, we poll endpoint #3 once per hour (YEARLY_CACHE_INTERVAL).
+            # In between hourly polls, we update the most recent (last) element in the
+            # 13-month array using the live monthly_usage from endpoint #2, keeping
+            # yearly_usage accurate in real time on every poll without hitting the server.
+            now_mono = time.monotonic()
+            cached_year = self._yearly_cache.get(device_id)
 
-                    start_time = year_history.get("startTime")
-                    if isinstance(start_time, (int, float)) and start_time > 0:
-                        yearly_used_since = datetime.fromtimestamp(
-                            start_time, timezone.utc
-                        ).strftime("%b, %Y")
-                    else:
-                        one_year_ago = datetime.now() - timedelta(days=365)
-                        yearly_used_since = one_year_ago.strftime("%b, %Y")
-            except Exception as err:
-                _LOGGER.debug(
-                    "Could not fetch rolling yearly water usage for device %s: %s",
-                    device_id,
-                    err,
-                )
+            if cached_year is None or (now_mono - cached_year.get("last_fetched", 0)) >= YEARLY_CACHE_INTERVAL:
+                try:
+                    current_year = datetime.now().strftime("%Y")
+                    year_history = self.client.get_water_usage(
+                        device_id, period=current_year, rolling=True
+                    )
+                    if isinstance(year_history, dict) and "data" in year_history:
+                        raw_data = year_history["data"]
+                        if isinstance(raw_data, list) and raw_data:
+                            float_data = [
+                                float(x) for x in raw_data if isinstance(x, (int, float))
+                            ]
+                            if float_data:
+                                start_time = year_history.get("startTime")
+                                if isinstance(start_time, (int, float)) and start_time > 0:
+                                    used_since = datetime.fromtimestamp(
+                                        start_time, timezone.utc
+                                    ).strftime("%b, %Y")
+                                else:
+                                    one_year_ago = datetime.now() - timedelta(days=365)
+                                    used_since = one_year_ago.strftime("%b, %Y")
+
+                                cached_year = {
+                                    "last_fetched": now_mono,
+                                    "monthly_history": float_data,
+                                    "used_since": used_since,
+                                }
+                                self._yearly_cache[device_id] = cached_year
+                except Exception as err:
+                    _LOGGER.debug(
+                        "Could not fetch rolling yearly water usage for device %s: %s",
+                        device_id,
+                        err,
+                    )
+
+            if cached_year and cached_year.get("monthly_history"):
+                history = list(cached_year["monthly_history"])
+                # Dynamically update the most recent (last) month using current monthly_usage
+                if monthly_usage > 0 and len(history) > 0:
+                    history[-1] = monthly_usage
+                    cached_year["monthly_history"][-1] = monthly_usage
+
+                rolling_total = sum(history)
+                if rolling_total > 0:
+                    yearly_usage = round(rolling_total, 1)
+
+                monthly_history = history
+                yearly_used_since = cached_year.get("used_since")
+
 
             gallons_today = float(dev.get("gallons_today") or 0.0)
             # If detailed daily usage is unavailable, fall back to gallons_today from location

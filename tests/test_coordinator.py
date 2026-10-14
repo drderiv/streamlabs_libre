@@ -226,5 +226,27 @@ def test_coordinator_rolling_yearly_usage(mock_hass, mock_client):
     assert dev.yearly_usage == 39827.0
     assert dev.yearly_used_since is not None
     assert len(dev.monthly_history) == 13
+    assert dev.monthly_history[-1] == 2927.0
+
+    # Second poll: Endpoint #3 should NOT be called (cached), but current month increases to 2950.0
+    mock_client.get_water_usage.reset_mock()
+
+    def mock_get_water_usage_second_poll(device_id, date_str=None, period=None, rolling=None):
+        if period is not None and rolling is True:
+            pytest.fail("Endpoint #3 should not be called when cached within 1 hour")
+        return {"today": 35.0, "thisMonth": 2950.0, "thisYear": 0.0}
+
+    mock_client.get_water_usage.side_effect = mock_get_water_usage_second_poll
+
+    data2 = coordinator._update_data()
+    dev2 = data2["dev-01"]
+    # Endpoint #2 was called, endpoint #3 was skipped:
+    assert mock_client.get_water_usage.call_count == 1
+    assert dev2.monthly_usage == 2950.0
+    # Last element of monthly_history dynamically updated to 2950.0:
+    assert dev2.monthly_history[-1] == 2950.0
+    # Yearly usage dynamically updated from 39827.0 to 39850.0:
+    assert dev2.yearly_usage == 39850.0
+
 
 

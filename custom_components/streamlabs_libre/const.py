@@ -17,6 +17,10 @@ DEFAULT_SCAN_INTERVAL: Final = 60
 MIN_SCAN_INTERVAL: Final = 10
 MAX_SCAN_INTERVAL: Final = 300
 
+# Rolling yearly usage cache duration in seconds (1 hour)
+YEARLY_CACHE_INTERVAL: Final = 3600
+
+
 # AWS Cognito & API defaults
 COGNITO_USER_POOL_ID: Final = "us-east-1_AxkuzXSR6"
 COGNITO_CLIENT_ID: Final = "3kjsjce1iubjvrobk143i4haj4"

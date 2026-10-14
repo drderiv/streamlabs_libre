@@ -103,7 +103,7 @@ python3 cli/streamlabs_cli.py --device "<DEVICE_ID>" usage
 
 ---
 
-## Discovered Hardware Commands
+## Hardware Commands
 
 The StreamLabs API supports direct hardware maintenance routines via `POST /devices/{id}/command`:
 
