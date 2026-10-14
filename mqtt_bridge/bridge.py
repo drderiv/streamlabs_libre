@@ -19,7 +19,11 @@ _repo_root = os.path.dirname(_script_dir)
 if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
 
-from custom_components.streamlabs_libre.client import StreamLabsClient, StreamLabsError
+from custom_components.streamlabs_libre.client import (
+    StreamLabsClient,
+    StreamLabsError,
+    extract_reading_value,
+)
 from mqtt_bridge.config import BridgeConfig
 from mqtt_bridge.discovery import build_discovery_payloads
 
@@ -201,6 +205,44 @@ class StreamLabsMQTTBridge:
             if daily == 0.0 and gallons_today > 0.0:
                 daily = gallons_today
 
+            # Fetch detailed device telemetry (room temp, humidity, water pressure, water temp)
+            dev_detail: Dict[str, Any] = {}
+            try:
+                dev_detail = self.client.get_device(device_id)
+            except Exception as err:
+                _LOGGER.debug("Could not fetch device detail for %s: %s", device_id, err)
+
+            raw_ambient = (
+                dev_detail.get("ambientTemp")
+                or dev_detail.get("ambient_temp")
+                or dev_detail.get("roomTemp")
+                or dev.get("ambient_temp")
+                or dev.get("ambientTemp")
+            )
+            raw_humidity = (
+                dev_detail.get("humidity")
+                or dev_detail.get("roomHumidity")
+                or dev.get("humidity")
+            )
+            raw_pressure = (
+                dev_detail.get("waterPressure")
+                or dev_detail.get("water_pressure")
+                or dev_detail.get("pressure")
+                or dev.get("water_pressure")
+                or dev.get("waterPressure")
+            )
+            raw_water_temp = (
+                dev_detail.get("waterTemp")
+                or dev_detail.get("water_temp")
+                or dev.get("water_temp")
+                or dev.get("waterTemp")
+            )
+
+            room_temp = extract_reading_value(raw_ambient)
+            room_humidity = extract_reading_value(raw_humidity)
+            water_pressure = extract_reading_value(raw_pressure)
+            water_temp = extract_reading_value(raw_water_temp)
+
             # Build state payload
             state_data = {
                 "device_id": device_id,
@@ -215,6 +257,10 @@ class StreamLabsMQTTBridge:
                 "monthly_usage": round(monthly, 2),
                 "yearly_usage": round(yearly, 2),
                 "gallons_today": round(gallons_today, 2),
+                "room_humidity": room_humidity,
+                "room_temp": room_temp,
+                "water_pressure": water_pressure,
+                "water_temp": water_temp,
             }
 
             state_topic = f"{self.config.topic_prefix}/{device_id}/state"

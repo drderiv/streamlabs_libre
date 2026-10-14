@@ -44,6 +44,28 @@ class StreamLabsDeviceNotFoundError(StreamLabsError):
     """Requested device was not found."""
 
 
+def extract_reading_value(val: Any) -> Optional[float]:
+    """Extract a numeric reading value from API response or nested TooLowTooHigh object.
+
+    StreamLabs returns sentinels <= -1000 (such as -10000) when a sensor reading is
+    unavailable, erroneous, or not supported by the hardware model.
+    """
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        num = float(val)
+        return None if num <= -1000 else num
+    if isinstance(val, dict):
+        for key in ("currentValue", "iCurrentValue", "value"):
+            if key in val and val[key] is not None:
+                try:
+                    num = float(val[key])
+                    return None if num <= -1000 else num
+                except (ValueError, TypeError):
+                    pass
+    return None
+
+
 class StreamLabsClient:
     """Client for StreamLabs water monitor and shutoff hardware."""
 
@@ -128,6 +150,10 @@ class StreamLabsClient:
                     "has_valve": "valve" in dev or dev.get("valve") is not None,
                     "valve_position": dev.get("valve", {}).get("position") if dev.get("valve") else None,
                     "gallons_today": gallons_today,
+                    "ambient_temp": dev.get("ambientTemp"),
+                    "humidity": dev.get("humidity"),
+                    "water_pressure": dev.get("waterPressure"),
+                    "water_temp": dev.get("waterTemp"),
                 }
                 if device_id and dev.get("deviceId") == device_id:
                     return item
@@ -136,6 +162,20 @@ class StreamLabsClient:
         if device_id:
             raise StreamLabsDeviceNotFoundError(f"Device ID '{device_id}' was not found in account.")
         return {"devices": devices}
+
+    def get_device(self, device_id: str) -> Dict[str, Any]:
+        """
+        Fetch detailed device telemetry and settings.
+        Wire Route: GET /devices/{deviceId}
+        """
+        self._ensure_authenticated()
+        url = f"{BASE_URL}/devices/{device_id}"
+        try:
+            resp = self.session.get(url, timeout=15)
+            resp.raise_for_status()
+            return resp.json()
+        except requests.RequestException as err:
+            raise StreamLabsConnectionError(f"Failed to fetch device {device_id}: {err}") from err
 
     def set_valve(self, device_id: str, target_position: Literal["open", "close"]) -> bool:
         """

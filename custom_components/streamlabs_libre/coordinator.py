@@ -11,7 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .client import StreamLabsClient, StreamLabsError
+from .client import StreamLabsClient, StreamLabsError, extract_reading_value
 from .const import CONF_LOCATIONS, DEFAULT_SCAN_INTERVAL, DOMAIN, LOGGER
 
 _LOGGER = logging.getLogger(__name__)
@@ -35,6 +35,10 @@ class StreamLabsDeviceData:
     yearly_usage: float
     gallons_today: float
     raw_status: Dict[str, Any]
+    room_temp: Optional[float] = None
+    room_humidity: Optional[float] = None
+    water_pressure: Optional[float] = None
+    water_temp: Optional[float] = None
 
 
 type StreamlabsConfigEntry = ConfigEntry[StreamlabsCoordinator]
@@ -143,6 +147,48 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
             if daily_usage == 0.0 and gallons_today > 0.0:
                 daily_usage = gallons_today
 
+            # Fetch detailed device telemetry (ambient temp, humidity, water pressure, water temp)
+            device_detail: Dict[str, Any] = {}
+            try:
+                device_detail = self.client.get_device(device_id)
+            except Exception as err:
+                _LOGGER.debug(
+                    "Could not fetch detailed telemetry for device %s: %s",
+                    device_id,
+                    err,
+                )
+
+            raw_ambient = (
+                device_detail.get("ambientTemp")
+                or device_detail.get("ambient_temp")
+                or device_detail.get("roomTemp")
+                or dev.get("ambient_temp")
+                or dev.get("ambientTemp")
+            )
+            raw_humidity = (
+                device_detail.get("humidity")
+                or device_detail.get("roomHumidity")
+                or dev.get("humidity")
+            )
+            raw_pressure = (
+                device_detail.get("waterPressure")
+                or device_detail.get("water_pressure")
+                or device_detail.get("pressure")
+                or dev.get("water_pressure")
+                or dev.get("waterPressure")
+            )
+            raw_water_temp = (
+                device_detail.get("waterTemp")
+                or device_detail.get("water_temp")
+                or dev.get("water_temp")
+                or dev.get("waterTemp")
+            )
+
+            room_temp = extract_reading_value(raw_ambient)
+            room_humidity = extract_reading_value(raw_humidity)
+            water_pressure = extract_reading_value(raw_pressure)
+            water_temp = extract_reading_value(raw_water_temp)
+
             devices_data[device_id] = StreamLabsDeviceData(
                 device_id=device_id,
                 device_name=dev.get("device_name") or f"StreamLabs {device_id}",
@@ -158,6 +204,10 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
                 yearly_usage=yearly_usage,
                 gallons_today=gallons_today,
                 raw_status=dev,
+                room_temp=room_temp,
+                room_humidity=room_humidity,
+                water_pressure=water_pressure,
+                water_temp=water_temp,
             )
 
         return devices_data

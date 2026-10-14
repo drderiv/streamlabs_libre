@@ -46,6 +46,10 @@ def test_discovery_payload_generation():
     assert "homeassistant/sensor/streamlabs_dev-456/monthly_usage/config" in topics
     assert "homeassistant/sensor/streamlabs_dev-456/yearly_usage/config" in topics
     assert "homeassistant/sensor/streamlabs_dev-456/gallons_today/config" in topics
+    assert "homeassistant/sensor/streamlabs_dev-456/room_humidity/config" in topics
+    assert "homeassistant/sensor/streamlabs_dev-456/room_temp/config" in topics
+    assert "homeassistant/sensor/streamlabs_dev-456/water_pressure/config" in topics
+    assert "homeassistant/sensor/streamlabs_dev-456/water_temp/config" in topics
     # Verify binary sensors
     assert "homeassistant/binary_sensor/streamlabs_dev-456/flowing/config" in topics
     assert "homeassistant/binary_sensor/streamlabs_dev-456/connected/config" in topics
@@ -135,6 +139,13 @@ def test_bridge_poll_and_publish(mock_bridge):
         "thisMonth": 150.0,
         "thisYear": 1800.0,
     }
+    mock_bridge.client.get_device.return_value = {
+        "deviceId": "dev-01",
+        "ambientTemp": {"currentValue": 71},
+        "humidity": {"currentValue": 43},
+        "waterPressure": {"currentValue": 52},
+        "waterTemp": {"currentValue": 66},
+    }
 
     mock_bridge.poll_and_publish()
 
@@ -152,3 +163,7 @@ def test_bridge_poll_and_publish(mock_bridge):
     assert payload["flowing"] == "OFF"
     assert payload["daily_usage"] == 18.2
     assert payload["mode"] == "home"
+    assert payload["room_temp"] == 71.0
+    assert payload["room_humidity"] == 43.0
+    assert payload["water_pressure"] == 52.0
+    assert payload["water_temp"] == 66.0

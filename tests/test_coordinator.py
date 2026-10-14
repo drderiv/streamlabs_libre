@@ -125,3 +125,43 @@ def test_coordinator_update_data_fallback_gallons_today(mock_hass, mock_client):
     assert "dev-01" in data
     assert data["dev-01"].daily_usage == 33.3
     assert data["dev-01"].flowing is True
+
+
+def test_coordinator_environmental_telemetry(mock_hass, mock_client):
+    entry = MagicMock()
+    entry.data = {}
+    coordinator = StreamlabsCoordinator(mock_hass, entry, mock_client)
+
+    mock_client.get_status.return_value = {
+        "devices": [
+            {
+                "location_id": "loc-1",
+                "location_name": "Main Home",
+                "device_id": "dev-01",
+                "device_name": "Main Valve",
+                "connected": True,
+                "flowing": False,
+                "mode": "home",
+                "has_valve": True,
+                "valve_position": "open",
+                "gallons_today": 10.0,
+            }
+        ]
+    }
+    mock_client.get_water_usage.return_value = {"today": 10.0}
+    mock_client.get_device.return_value = {
+        "deviceId": "dev-01",
+        "ambientTemp": {"currentValue": 74},
+        "humidity": {"currentValue": 48},
+        "waterPressure": {"currentValue": 58},
+        "waterTemp": {"currentValue": 65},
+    }
+
+    data = coordinator._update_data()
+    assert "dev-01" in data
+    dev = data["dev-01"]
+    assert dev.room_temp == 74.0
+    assert dev.room_humidity == 48.0
+    assert dev.water_pressure == 58.0
+    assert dev.water_temp == 65.0
+

@@ -106,10 +106,49 @@ def build_discovery_payloads(
             "gal",
             "water",
             "total_increasing",
+            1,
+        ),
+        (
+            "room_humidity",
+            "Room humidity",
+            "{{ value_json.room_humidity }}",
+            "%",
+            "humidity",
+            "measurement",
+            0,
+        ),
+        (
+            "room_temp",
+            "Room temp",
+            "{{ value_json.room_temp }}",
+            "°F",
+            "temperature",
+            "measurement",
+            1,
+        ),
+        (
+            "water_pressure",
+            "Water pressure",
+            "{{ value_json.water_pressure }}",
+            "psi",
+            "pressure",
+            "measurement",
+            1,
+        ),
+        (
+            "water_temp",
+            "Water temp",
+            "{{ value_json.water_temp }}",
+            "°F",
+            "temperature",
+            "measurement",
+            1,
         ),
     ]
 
-    for key, name, v_tpl, unit, dev_class, state_class in sensors:
+    for item in sensors:
+        key, name, v_tpl, unit, dev_class, state_class = item[:6]
+        prec = item[6] if len(item) > 6 else 1
         configs.append(
             (
                 f"{discovery_prefix}/sensor/streamlabs_{device_id}/{key}/config",
@@ -122,7 +161,7 @@ def build_discovery_payloads(
                     "unit_of_measurement": unit,
                     "device_class": dev_class,
                     "state_class": state_class,
-                    "suggested_display_precision": 1,
+                    "suggested_display_precision": prec,
                     "availability_topic": avail_topic,
                 },
             )

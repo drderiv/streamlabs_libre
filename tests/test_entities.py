@@ -41,6 +41,10 @@ def mock_coordinator():
         yearly_usage=1800.0,
         gallons_today=12.5,
         raw_status={},
+        room_temp=72.5,
+        room_humidity=45.0,
+        water_pressure=55.2,
+        water_temp=68.0,
     )
     coord.data = {"dev-test": device_data}
     return coord
@@ -98,6 +102,7 @@ def test_sensors(mock_coordinator):
 
     daily = StreamlabsSensor(mock_coordinator, "dev-test", sensors_by_key["daily_usage"])
     assert daily.native_value == 12.5
+    assert daily.available is True
 
     monthly = StreamlabsSensor(mock_coordinator, "dev-test", sensors_by_key["monthly_usage"])
     assert monthly.native_value == 150.0
@@ -107,6 +112,27 @@ def test_sensors(mock_coordinator):
 
     gallons_today = StreamlabsSensor(mock_coordinator, "dev-test", sensors_by_key["gallons_today"])
     assert gallons_today.native_value == 12.5
+
+    room_humidity = StreamlabsSensor(mock_coordinator, "dev-test", sensors_by_key["room_humidity"])
+    assert room_humidity.native_value == 45.0
+    assert room_humidity.available is True
+
+    room_temp = StreamlabsSensor(mock_coordinator, "dev-test", sensors_by_key["room_temp"])
+    assert room_temp.native_value == 72.5
+    assert room_temp.available is True
+
+    water_pressure = StreamlabsSensor(mock_coordinator, "dev-test", sensors_by_key["water_pressure"])
+    assert water_pressure.native_value == 55.2
+    assert water_pressure.available is True
+
+    water_temp = StreamlabsSensor(mock_coordinator, "dev-test", sensors_by_key["water_temp"])
+    assert water_temp.native_value == 68.0
+    assert water_temp.available is True
+
+    # Test unavailable when sensor reading is None
+    mock_coordinator.data["dev-test"].room_temp = None
+    assert room_temp.native_value is None
+    assert room_temp.available is False
 
 
 def test_binary_sensors(mock_coordinator):

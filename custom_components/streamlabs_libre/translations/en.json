@@ -65,6 +65,18 @@
       },
       "gallons_today": {
         "name": "Gallons today"
+      },
+      "room_humidity": {
+        "name": "Room humidity"
+      },
+      "room_temp": {
+        "name": "Room temp"
+      },
+      "water_pressure": {
+        "name": "Water pressure"
+      },
+      "water_temp": {
+        "name": "Water temp"
       }
     }
   },

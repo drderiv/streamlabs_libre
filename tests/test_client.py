@@ -166,3 +166,45 @@ def test_send_command(client, mock_cognito):
             json={"command": "run drip detect"},
             timeout=20,
         )
+
+
+def test_get_device(client, mock_cognito):
+    device_json = {
+        "deviceId": "dev-01",
+        "ambientTemp": {"currentValue": 72},
+        "humidity": {"currentValue": 45},
+        "waterPressure": {"currentValue": 55},
+        "waterTemp": {"currentValue": 68},
+    }
+    with patch.object(client.session, "get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = device_json
+        result = client.get_device("dev-01")
+        assert result == device_json
+        mock_get.assert_called_once_with(
+            "https://api.platform.streamlabs.io/devices/dev-01",
+            timeout=15,
+        )
+
+
+def test_extract_reading_value():
+    from custom_components.streamlabs_libre.client import extract_reading_value
+
+    assert extract_reading_value(72) == 72.0
+    assert extract_reading_value(45.5) == 45.5
+    assert extract_reading_value({"currentValue": 70}) == 70.0
+    assert extract_reading_value({"iCurrentValue": 55}) == 55.0
+    assert extract_reading_value({"value": 68.2}) == 68.2
+
+    # Sentinel error values <= -1000 should be filtered to None
+    assert extract_reading_value(-1000) is None
+    assert extract_reading_value(-10000) is None
+    assert extract_reading_value({"currentValue": -10000}) is None
+    assert extract_reading_value({"iCurrentValue": -1000}) is None
+
+    # Missing or invalid
+    assert extract_reading_value(None) is None
+    assert extract_reading_value({}) is None
+    assert extract_reading_value({"currentValue": "invalid"}) is None
+    assert extract_reading_value("not_a_number") is None
+

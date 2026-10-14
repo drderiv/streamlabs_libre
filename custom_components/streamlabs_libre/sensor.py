@@ -11,7 +11,12 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfVolume
+from homeassistant.const import (
+    PERCENTAGE,
+    UnitOfPressure,
+    UnitOfTemperature,
+    UnitOfVolume,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
@@ -68,6 +73,46 @@ SENSORS: tuple[StreamlabsSensorEntityDescription, ...] = (
         suggested_display_precision=1,
         value_fn=lambda data: data.gallons_today,
     ),
+    StreamlabsSensorEntityDescription(
+        key="room_humidity",
+        name="Room humidity",
+        translation_key="room_humidity",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.HUMIDITY,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
+        value_fn=lambda data: data.room_humidity,
+    ),
+    StreamlabsSensorEntityDescription(
+        key="room_temp",
+        name="Room temp",
+        translation_key="room_temp",
+        native_unit_of_measurement=UnitOfTemperature.FAHRENHEIT,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=lambda data: data.room_temp,
+    ),
+    StreamlabsSensorEntityDescription(
+        key="water_pressure",
+        name="Water pressure",
+        translation_key="water_pressure",
+        native_unit_of_measurement=UnitOfPressure.PSI,
+        device_class=SensorDeviceClass.PRESSURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=lambda data: data.water_pressure,
+    ),
+    StreamlabsSensorEntityDescription(
+        key="water_temp",
+        name="Water temp",
+        translation_key="water_temp",
+        native_unit_of_measurement=UnitOfTemperature.FAHRENHEIT,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=lambda data: data.water_temp,
+    ),
 )
 
 
@@ -87,7 +132,7 @@ async def async_setup_entry(
 
 
 class StreamlabsSensor(StreamlabsBaseEntity, SensorEntity):
-    """Monitors StreamLabs volumetric water usage."""
+    """Monitors StreamLabs volumetric water usage and environmental telemetry."""
 
     entity_description: StreamlabsSensorEntityDescription
 
@@ -97,9 +142,14 @@ class StreamlabsSensor(StreamlabsBaseEntity, SensorEntity):
         device_id: str,
         entity_description: StreamlabsSensorEntityDescription,
     ) -> None:
-        """Initialize the water usage sensor."""
+        """Initialize the sensor."""
         super().__init__(coordinator, device_id, entity_description.key)
         self.entity_description = entity_description
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available and has a valid reading."""
+        return super().available and self.native_value is not None
 
     @property
     def native_value(self) -> StateType:
