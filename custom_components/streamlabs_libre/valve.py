@@ -37,7 +37,7 @@ class StreamlabsValve(StreamlabsBaseEntity, ValveEntity):
     """Representation of a StreamLabs water shutoff valve."""
 
     _attr_device_class = ValveDeviceClass.WATER
-    _attr_name = "Shutoff valve"
+    _attr_name = "Water valve"
     _attr_translation_key = "shutoff_valve"
     _attr_supported_features = ValveEntityFeature.OPEN | ValveEntityFeature.CLOSE
     _attr_reports_position = False

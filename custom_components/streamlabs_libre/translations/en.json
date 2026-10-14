@@ -30,7 +30,7 @@
   "entity": {
     "valve": {
       "shutoff_valve": {
-        "name": "Shutoff valve"
+        "name": "Water valve"
       }
     },
     "select": {

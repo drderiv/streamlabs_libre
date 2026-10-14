@@ -54,7 +54,7 @@ def test_discovery_payload_generation():
     # Inspect valve JSON payload
     valve_entry = next(p for t, p in entries if "valve" in t and "config" in t)
     valve_json = json.loads(valve_entry)
-    assert valve_json["name"] == "Shutoff valve"
+    assert valve_json["name"] == "Water valve"
     assert valve_json["command_topic"] == "streamlabs/dev-456/valve/set"
     assert valve_json["state_topic"] == "streamlabs/dev-456/state"
 

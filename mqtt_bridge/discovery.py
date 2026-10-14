@@ -38,7 +38,7 @@ def build_discovery_payloads(
             (
                 f"{discovery_prefix}/valve/streamlabs_{device_id}/shutoff_valve/config",
                 {
-                    "name": "Shutoff valve",
+                    "name": "Water valve",
                     "unique_id": f"streamlabs_{device_id}_shutoff_valve",
                     "device": device_payload,
                     "device_class": "water",
