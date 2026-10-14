@@ -44,6 +44,7 @@ BINARY_SENSORS: tuple[StreamlabsBinarySensorEntityDescription, ...] = (
         name="Away mode",
         translation_key="away_mode",
         icon="mdi:home-export-outline",
+        entity_registry_enabled_default=False,
         is_on_fn=lambda data: data.mode == "away",
     ),
 )

@@ -13,6 +13,7 @@ class EntityDescription:
     translation_key: str | None = None
     icon: str | None = None
     device_class: Any = None
+    entity_registry_enabled_default: bool = True
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -62,6 +62,15 @@ def test_discovery_payload_generation():
     assert valve_json["command_topic"] == "streamlabs/dev-456/valve/set"
     assert valve_json["state_topic"] == "streamlabs/dev-456/state"
 
+    # Inspect away_mode binary sensor JSON payload (should be disabled by default)
+    away_entry = next(p for t, p in entries if "away_mode" in t and "config" in t)
+    away_json = json.loads(away_entry)
+    assert away_json["enabled_by_default"] is False
+
+    flowing_entry = next(p for t, p in entries if "flowing" in t and "config" in t)
+    flowing_json = json.loads(flowing_entry)
+    assert flowing_json["enabled_by_default"] is True
+
 
 def test_discovery_monitor_without_valve():
     device = {

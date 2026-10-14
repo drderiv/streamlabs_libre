@@ -146,3 +146,7 @@ def test_binary_sensors(mock_coordinator):
 
     away = StreamlabsBinarySensor(mock_coordinator, "dev-test", bin_by_key["away_mode"])
     assert away.is_on is False
+
+    # away_mode should be disabled by default to avoid duplication with mode select
+    assert bin_by_key["away_mode"].entity_registry_enabled_default is False
+    assert bin_by_key["flowing"].entity_registry_enabled_default is True

@@ -169,12 +169,12 @@ def build_discovery_payloads(
 
     # 4. Binary Sensors (flowing, connectivity, away_mode)
     bin_sensors = [
-        ("flowing", "Water flowing", "{{ value_json.flowing }}", None, "mdi:water-pump"),
-        ("connected", "Connectivity", "{{ value_json.connected }}", "connectivity", None),
-        ("away_mode", "Away mode", "{{ value_json.away_mode }}", None, "mdi:home-export-outline"),
+        ("flowing", "Water flowing", "{{ value_json.flowing }}", None, "mdi:water-pump", True),
+        ("connected", "Connectivity", "{{ value_json.connected }}", "connectivity", None, True),
+        ("away_mode", "Away mode", "{{ value_json.away_mode }}", None, "mdi:home-export-outline", False),
     ]
 
-    for key, name, v_tpl, dev_class, icon in bin_sensors:
+    for key, name, v_tpl, dev_class, icon, enabled in bin_sensors:
         cfg: Dict[str, Any] = {
             "name": name,
             "unique_id": f"streamlabs_{device_id}_{key}",
@@ -184,6 +184,7 @@ def build_discovery_payloads(
             "payload_on": "ON",
             "payload_off": "OFF",
             "availability_topic": avail_topic,
+            "enabled_by_default": enabled,
         }
         if dev_class:
             cfg["device_class"] = dev_class
