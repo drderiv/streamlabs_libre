@@ -25,13 +25,20 @@ async def async_setup_entry(
 ) -> None:
     """Set up StreamLabs valve from a config entry."""
     coordinator = entry.runtime_data
+    added_devices: set[str] = set()
 
-    entities: list[StreamlabsValve] = []
-    for device_id, device_data in coordinator.data.items():
-        if device_data.has_valve or device_data.valve_position is not None:
-            entities.append(StreamlabsValve(coordinator, device_id))
+    def _check_and_add_valves() -> None:
+        new_entities: list[StreamlabsValve] = []
+        for device_id, device_data in coordinator.data.items():
+            if device_id not in added_devices and (device_data.has_valve or device_data.valve_position is not None):
+                added_devices.add(device_id)
+                new_entities.append(StreamlabsValve(coordinator, device_id))
+        if new_entities:
+            async_add_entities(new_entities)
 
-    async_add_entities(entities)
+    _check_and_add_valves()
+    if hasattr(coordinator, "async_add_listener"):
+        entry.async_on_unload(coordinator.async_add_listener(_check_and_add_valves))
 
 
 class StreamlabsValve(StreamlabsBaseEntity, ValveEntity):

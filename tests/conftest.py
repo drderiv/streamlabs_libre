@@ -33,6 +33,10 @@ class Entity:
     _attr_unique_id = None
     _attr_device_info = None
 
+    @property
+    def unique_id(self) -> str | None:
+        return self._attr_unique_id
+
     def async_write_ha_state(self) -> None:
         pass
 
@@ -78,9 +82,21 @@ class DataUpdateCoordinator:
         self.update_interval = update_interval
         self.data: Any = {}
         self.last_update_success = True
+        self._listeners: list[Any] = []
 
     def __class_getitem__(cls, item: Any) -> type:
         return cls
+
+    def async_add_listener(self, update_callback: Any) -> Any:
+        self._listeners.append(update_callback)
+        def remove_listener():
+            if update_callback in self._listeners:
+                self._listeners.remove(update_callback)
+        return remove_listener
+
+    def async_update_listeners(self) -> None:
+        for listener in list(self._listeners):
+            listener()
 
     async def async_config_entry_first_refresh(self) -> None:
         pass

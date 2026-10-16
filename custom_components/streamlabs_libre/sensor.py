@@ -151,12 +151,26 @@ async def async_setup_entry(
 ) -> None:
     """Set up StreamLabs water sensors from a config entry."""
     coordinator = entry.runtime_data
+    added_entities: set[str] = set()
 
-    async_add_entities(
-        StreamlabsSensor(coordinator, device_id, entity_description)
-        for device_id in coordinator.data
-        for entity_description in SENSORS
-    )
+    def _check_and_add_sensors() -> None:
+        new_entities: list[StreamlabsSensor] = []
+        for device_id in coordinator.data:
+            for entity_description in SENSORS:
+                if entity_description.entity_registry_enabled_default is False:
+                    continue
+                unique_key = f"{device_id}_{entity_description.key}"
+                if unique_key not in added_entities:
+                    added_entities.add(unique_key)
+                    new_entities.append(
+                        StreamlabsSensor(coordinator, device_id, entity_description)
+                    )
+        if new_entities:
+            async_add_entities(new_entities)
+
+    _check_and_add_sensors()
+    if hasattr(coordinator, "async_add_listener"):
+        entry.async_on_unload(coordinator.async_add_listener(_check_and_add_sensors))
 
 
 class StreamlabsSensor(StreamlabsBaseEntity, SensorEntity):

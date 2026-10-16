@@ -116,13 +116,52 @@ class StreamLabsClient:
             "Accept": "application/json",
         })
 
+    def _validate_response(self, resp: requests.Response) -> Any:
+        """Validate HTTP response and detect error payloads disguised as HTTP 200."""
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError as err:
+            raise StreamLabsConnectionError(f"HTTP request failed ({resp.status_code}): {err}") from err
+
+        if resp.status_code in (202, 204) or not resp.content:
+            return {}
+
+        try:
+            data = resp.json()
+        except Exception as err:
+            raise StreamLabsConnectionError(f"Invalid JSON response from StreamLabs API: {err}") from err
+
+        if isinstance(data, dict):
+            if "error" in data:
+                err_msg = data.get("error_description") or data.get("message") or data.get("error")
+                raise StreamLabsError(f"StreamLabs API returned error payload: {err_msg}")
+            if "errors" in data and isinstance(data["errors"], list) and data["errors"]:
+                err_msg = (
+                    data["errors"][0].get("message")
+                    if isinstance(data["errors"][0], dict)
+                    else str(data["errors"][0])
+                )
+                raise StreamLabsError(f"StreamLabs API returned error payload: {err_msg}")
+            if "code" in data and str(data.get("code")).lower() not in ("200", "ok", "0"):
+                err_msg = data.get("message") or data.get("description") or f"Error code {data['code']}"
+                raise StreamLabsError(f"StreamLabs API error ({data['code']}): {err_msg}")
+            if "statusCode" in data and str(data.get("statusCode")) not in ("200", "0"):
+                err_msg = data.get("message") or f"Status code {data['statusCode']}"
+                raise StreamLabsError(f"StreamLabs API error ({data['statusCode']}): {err_msg}")
+            if data.get("ErrorMessage") and str(data.get("ReturnCode", "1")) not in ("0", "200"):
+                raise StreamLabsError(f"StreamLabs API error: {data['ErrorMessage']}")
+
+        return data
+
     def get_locations(self) -> Dict[str, Any]:
         """Fetch the full locations hierarchy."""
         self._ensure_authenticated()
         try:
             resp = self.session.get(f"{BASE_URL}/locations", timeout=15)
-            resp.raise_for_status()
-            return resp.json()
+            data = self._validate_response(resp)
+            if not isinstance(data, dict):
+                return {}
+            return data
         except requests.RequestException as err:
             raise StreamLabsConnectionError(f"Failed to fetch locations: {err}") from err
 
@@ -172,8 +211,10 @@ class StreamLabsClient:
         url = f"{BASE_URL}/devices/{device_id}"
         try:
             resp = self.session.get(url, timeout=15)
-            resp.raise_for_status()
-            return resp.json()
+            data = self._validate_response(resp)
+            if not isinstance(data, dict):
+                return {}
+            return data
         except requests.RequestException as err:
             raise StreamLabsConnectionError(f"Failed to fetch device {device_id}: {err}") from err
 
@@ -195,7 +236,7 @@ class StreamLabsClient:
         }
         try:
             resp = self.session.post(url, json=payload, timeout=20)
-            resp.raise_for_status()
+            self._validate_response(resp)
             return resp.status_code in (200, 204)
         except requests.RequestException as err:
             raise StreamLabsConnectionError(f"Failed to actuate valve: {err}") from err
@@ -213,7 +254,7 @@ class StreamLabsClient:
         payload = {"mode": mode}
         try:
             resp = self.session.put(url, json=payload, timeout=15)
-            resp.raise_for_status()
+            self._validate_response(resp)
             return resp.status_code in (200, 204)
         except requests.RequestException as err:
             raise StreamLabsConnectionError(f"Failed to update monitoring mode: {err}") from err
@@ -240,8 +281,10 @@ class StreamLabsClient:
 
         try:
             resp = self.session.get(url, params=params or None, timeout=15)
-            resp.raise_for_status()
-            return resp.json()
+            data = self._validate_response(resp)
+            if not isinstance(data, dict):
+                return {}
+            return data
         except requests.RequestException as err:
             raise StreamLabsConnectionError(f"Failed to fetch water usage: {err}") from err
 
@@ -272,7 +315,7 @@ class StreamLabsClient:
 
         try:
             resp = self.session.post(url, json=payload, timeout=20)
-            resp.raise_for_status()
+            self._validate_response(resp)
             return resp.status_code in (200, 204)
         except requests.RequestException as err:
             raise StreamLabsConnectionError(f"Failed to execute command '{command}': {err}") from err

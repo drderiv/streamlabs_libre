@@ -73,8 +73,10 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
         client: StreamLabsClient,
     ) -> None:
         """Initialize the coordinator."""
-        options = getattr(config_entry, "options", None) or {}
-        data = getattr(config_entry, "data", None) or {}
+        raw_options = getattr(config_entry, "options", None)
+        options = raw_options if isinstance(raw_options, dict) else {}
+        raw_data = getattr(config_entry, "data", None)
+        data = raw_data if isinstance(raw_data, dict) else {}
 
         legacy_interval = options.get(
             CONF_SCAN_INTERVAL, data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
@@ -115,16 +117,86 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
         self._telemetry_cache: Dict[str, Dict[str, Any]] = {}
         self._flow_tracking: Dict[str, Dict[str, Any]] = {}
 
+        # Cached device state dictionary to preserve last known valid state across outages
+        self._cached_devices: Dict[str, StreamLabsDeviceData] = {}
+
+        # Outage and log throttling tracking
+        self._consecutive_failures: int = 0
 
     async def _async_update_data(self) -> Dict[str, StreamLabsDeviceData]:
-        """Fetch latest data from StreamLabs."""
+        """Fetch latest data from StreamLabs with outage resilience and state preservation."""
+        fetch_error: Optional[Exception] = None
+        devices_data: Dict[str, StreamLabsDeviceData] = {}
+
         try:
-            return await self.hass.async_add_executor_job(self._update_data)
-        except StreamLabsError as err:
-            raise UpdateFailed(f"Error communicating with StreamLabs API: {err}") from err
+            devices_data = await self.hass.async_add_executor_job(self._update_data)
         except Exception as err:
-            LOGGER.exception("Unexpected error fetching StreamLabs data")
-            raise UpdateFailed(f"Unexpected error: {err}") from err
+            fetch_error = err
+
+        # Handle upstream outage or communication failure
+        if fetch_error is not None:
+            self._consecutive_failures += 1
+            if self._consecutive_failures <= 3:
+                LOGGER.warning(
+                    "Error communicating with StreamLabs API (attempt %d): %s",
+                    self._consecutive_failures,
+                    fetch_error,
+                )
+            else:
+                LOGGER.debug(
+                    "StreamLabs API outage ongoing (attempt %d): %s",
+                    self._consecutive_failures,
+                    fetch_error,
+                )
+
+            # Revert to water_off polling interval during outages to prevent hammering upstream
+            self.update_interval = timedelta(seconds=self.scan_interval_off)
+
+            # Preserve last known valid device state so entities never flap or crash
+            if self._cached_devices:
+                LOGGER.debug(
+                    "Preserving last known device state for %d StreamLabs device(s) during outage",
+                    len(self._cached_devices),
+                )
+                return dict(self._cached_devices)
+
+            raise UpdateFailed(f"Error communicating with StreamLabs API: {fetch_error}") from fetch_error
+
+        # If API returned an empty device list but we previously had valid cached data,
+        # treat as a transient empty-payload glitch and preserve active device state.
+        if not devices_data and self._cached_devices:
+            self._consecutive_failures += 1
+            if self._consecutive_failures <= 3:
+                LOGGER.warning(
+                    "StreamLabs API returned empty device list (attempt %d); preserving last known state for %d device(s)",
+                    self._consecutive_failures,
+                    len(self._cached_devices),
+                )
+            else:
+                LOGGER.debug(
+                    "StreamLabs API empty response ongoing (attempt %d); preserving %d cached device(s)",
+                    self._consecutive_failures,
+                    len(self._cached_devices),
+                )
+            self.update_interval = timedelta(seconds=self.scan_interval_off)
+            return dict(self._cached_devices)
+
+        # Successful fetch: log recovery if previous attempts failed
+        if self._consecutive_failures > 0:
+            LOGGER.info(
+                "StreamLabs cloud connection restored after %d failed attempt(s)",
+                self._consecutive_failures,
+            )
+            self._consecutive_failures = 0
+
+        self._cached_devices.update(devices_data)
+        if self.monitored_locations:
+            self._cached_devices = {
+                k: v for k, v in self._cached_devices.items()
+                if v.location_id in self.monitored_locations
+            }
+
+        return dict(self._cached_devices)
 
     def _extract_usage(self, usage_data: Dict[str, Any]) -> tuple[float, float, float]:
         """Extract daily, monthly, and yearly water consumption totals."""
@@ -253,19 +325,22 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
             if not device_id:
                 continue
 
-            # Attempt to fetch volumetric consumption for this device
-            daily_usage = 0.0
-            monthly_usage = 0.0
-            yearly_usage = 0.0
-            yearly_used_since: Optional[str] = None
-            monthly_history: Optional[List[float]] = None
+            # Initialize with cached values if available to prevent 0.0 drops during transient fetch errors
+            prev_cached = self._cached_devices.get(device_id)
+            daily_usage = prev_cached.daily_usage if prev_cached else 0.0
+            monthly_usage = prev_cached.monthly_usage if prev_cached else 0.0
+            yearly_usage = prev_cached.yearly_usage if prev_cached else 0.0
+            yearly_used_since: Optional[str] = prev_cached.yearly_used_since if prev_cached else None
+            monthly_history: Optional[List[float]] = prev_cached.monthly_history if prev_cached else None
 
             try:
                 usage_resp = self.client.get_water_usage(device_id)
-                daily_usage, monthly_usage, yearly_usage = self._extract_usage(usage_resp)
+                d, m, y = self._extract_usage(usage_resp)
+                if d > 0 or m > 0 or y > 0:
+                    daily_usage, monthly_usage, yearly_usage = d, m, y
             except Exception as err:
                 _LOGGER.debug(
-                    "Could not fetch detailed water usage for device %s: %s",
+                    "Could not fetch detailed water usage for device %s (retaining cached usage): %s",
                     device_id,
                     err,
                 )
@@ -313,6 +388,11 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
                         device_id,
                         err,
                     )
+                    # Back off auxiliary fetch on failure so it doesn't starve or hammer routine polling
+                    if cached_year is None:
+                        self._yearly_cache[device_id] = {"last_fetched": now_mono}
+                    else:
+                        cached_year["last_fetched"] = now_mono
 
             if cached_year and cached_year.get("monthly_history"):
                 history = list(cached_year["monthly_history"])
@@ -357,6 +437,11 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
                         device_id,
                         err,
                     )
+                    # Back off auxiliary fetch on failure so it doesn't retry on every 5s waterOn poll
+                    self._telemetry_cache[device_id] = {
+                        "last_fetched": now_mono,
+                        "data": cached_telemetry.get("data", {}) if cached_telemetry else {},
+                    }
                     if cached_telemetry:
                         device_detail = cached_telemetry.get("data", {})
 

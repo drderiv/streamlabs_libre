@@ -24,9 +24,14 @@ class StreamlabsBaseEntity(CoordinatorEntity[StreamlabsCoordinator]):
     ) -> None:
         """Initialize the StreamLabs base entity."""
         super().__init__(coordinator)
-        self._device_id = device_id
-        self._key = key
-        self._attr_unique_id = f"{device_id}_{key}"
+        self._device_id = str(device_id).strip()
+        self._key = str(key).strip()
+        self._attr_unique_id = f"{self._device_id}_{self._key}"
+
+    @property
+    def unique_id(self) -> str:
+        """Return the immutable unique ID for this entity."""
+        return self._attr_unique_id
 
     @property
     def device_data(self) -> Optional[StreamLabsDeviceData]:

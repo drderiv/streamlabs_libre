@@ -167,3 +167,100 @@ def test_binary_sensors(mock_coordinator):
     # away_mode should be disabled by default to avoid duplication with mode select
     assert bin_by_key["away_mode"].entity_registry_enabled_default is False
     assert bin_by_key["flowing"].entity_registry_enabled_default is True
+
+
+def test_entities_unique_id_immutability(mock_coordinator):
+    from custom_components.streamlabs_libre.sensor import SENSORS, StreamlabsSensor
+    from custom_components.streamlabs_libre.binary_sensor import BINARY_SENSORS, StreamlabsBinarySensor
+    from custom_components.streamlabs_libre.valve import StreamlabsValve
+    from custom_components.streamlabs_libre.select import StreamlabsModeSelect
+
+    # Sensor unique_id
+    daily_desc = next(d for d in SENSORS if d.key == "daily_usage")
+    sensor = StreamlabsSensor(mock_coordinator, "dev-test", daily_desc)
+    assert sensor.unique_id == "dev-test_daily_usage"
+    assert sensor._attr_unique_id == "dev-test_daily_usage"
+
+    # Binary sensor unique_id
+    flowing_desc = next(d for d in BINARY_SENSORS if d.key == "flowing")
+    bin_sensor = StreamlabsBinarySensor(mock_coordinator, "dev-test", flowing_desc)
+    assert bin_sensor.unique_id == "dev-test_flowing"
+
+    # Valve unique_id
+    valve = StreamlabsValve(mock_coordinator, "dev-test")
+    assert valve.unique_id == "dev-test_shutoff_valve"
+
+    # Select unique_id
+    select = StreamlabsModeSelect(mock_coordinator, "dev-test")
+    assert select.unique_id == "dev-test_monitoring_mode"
+
+
+@pytest.mark.asyncio
+async def test_conditional_entities_strictly_omitted_when_disabled(mock_coordinator):
+    """Verify that disabled entities (like away_mode) are completely omitted from async_add_entities."""
+    from custom_components.streamlabs_libre.binary_sensor import async_setup_entry as setup_binary_sensors
+
+    entry = MagicMock()
+    entry.runtime_data = mock_coordinator
+    added_entities = []
+
+    def mock_add_entities(entities):
+        added_entities.extend(entities)
+
+    await setup_binary_sensors(MagicMock(), entry, mock_add_entities)
+
+    added_keys = [e._key for e in added_entities]
+    # 'flowing' and 'connectivity' should be added
+    assert "flowing" in added_keys
+    assert "connectivity" in added_keys
+    # 'away_mode' has entity_registry_enabled_default = False and MUST be omitted!
+    assert "away_mode" not in added_keys
+
+
+@pytest.mark.asyncio
+async def test_dynamic_entity_registration_on_coordinator_update(mock_coordinator):
+    """Test that newly discovered devices are registered dynamically without duplicates."""
+    from custom_components.streamlabs_libre.valve import async_setup_entry as setup_valves
+
+    entry = MagicMock()
+    entry.runtime_data = mock_coordinator
+    listeners = []
+    mock_coordinator.async_add_listener = lambda cb: (listeners.append(cb), lambda: None)[1]
+    added_batches = []
+
+    def mock_add_entities(entities):
+        added_batches.append(list(entities))
+
+    # Initial setup: dev-test has a valve
+    await setup_valves(MagicMock(), entry, mock_add_entities)
+    assert len(added_batches) == 1
+    assert len(added_batches[0]) == 1
+    assert added_batches[0][0]._device_id == "dev-test"
+
+    # Now a second device 'dev-new' with a valve is discovered on subsequent poll
+    from custom_components.streamlabs_libre.coordinator import StreamLabsDeviceData
+    mock_coordinator.data["dev-new"] = StreamLabsDeviceData(
+        device_id="dev-new",
+        device_name="Second Valve",
+        location_id="loc-2",
+        location_name="Secondary Home",
+        connected=True,
+        flowing=False,
+        mode="home",
+        has_valve=True,
+        valve_position="open",
+        daily_usage=0.0,
+        monthly_usage=0.0,
+        yearly_usage=0.0,
+        gallons_today=0.0,
+        raw_status={},
+    )
+
+    # Trigger coordinator update listeners
+    for listener in list(listeners):
+        listener()
+
+    # The new device must be registered dynamically in a second batch without re-registering dev-test
+    assert len(added_batches) == 2
+    assert len(added_batches[1]) == 1
+    assert added_batches[1][0]._device_id == "dev-new"

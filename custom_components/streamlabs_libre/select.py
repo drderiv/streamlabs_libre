@@ -17,11 +17,20 @@ async def async_setup_entry(
 ) -> None:
     """Set up StreamLabs select entities from a config entry."""
     coordinator = entry.runtime_data
+    added_devices: set[str] = set()
 
-    async_add_entities(
-        StreamlabsModeSelect(coordinator, device_id)
-        for device_id in coordinator.data
-    )
+    def _check_and_add_selects() -> None:
+        new_entities: list[StreamlabsModeSelect] = []
+        for device_id in coordinator.data:
+            if device_id not in added_devices:
+                added_devices.add(device_id)
+                new_entities.append(StreamlabsModeSelect(coordinator, device_id))
+        if new_entities:
+            async_add_entities(new_entities)
+
+    _check_and_add_selects()
+    if hasattr(coordinator, "async_add_listener"):
+        entry.async_on_unload(coordinator.async_add_listener(_check_and_add_selects))
 
 
 class StreamlabsModeSelect(StreamlabsBaseEntity, SelectEntity):

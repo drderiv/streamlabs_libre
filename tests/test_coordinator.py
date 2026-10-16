@@ -331,4 +331,180 @@ def test_coordinator_dynamic_intervals_and_flow_rate(mock_hass, mock_client):
     assert coordinator.update_interval == timedelta(seconds=60)
 
 
+@pytest.mark.asyncio
+async def test_coordinator_initial_failure_raises_update_failed(mock_hass, mock_client):
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    entry = MagicMock()
+    entry.data = {}
+    coordinator = StreamlabsCoordinator(mock_hass, entry, mock_client)
+    mock_client.get_status.side_effect = StreamLabsError("Initial connection failure")
+
+    with pytest.raises(UpdateFailed, match="Error communicating with StreamLabs API"):
+        await coordinator._async_update_data()
+
+
+@pytest.mark.asyncio
+async def test_coordinator_preserves_state_on_transient_error(mock_hass, mock_client):
+    entry = MagicMock()
+    entry.data = {}
+    coordinator = StreamlabsCoordinator(mock_hass, entry, mock_client)
+
+    # First poll succeeds
+    mock_client.get_status.return_value = {
+        "devices": [
+            {
+                "location_id": "loc-1",
+                "device_id": "dev-01",
+                "device_name": "Main Water Monitor",
+                "connected": True,
+                "flowing": False,
+                "gallons_today": 15.0,
+            }
+        ]
+    }
+    mock_client.get_water_usage.return_value = {"today": 15.0, "thisMonth": 150.0, "thisYear": 1500.0}
+    mock_client.get_device.return_value = {"deviceId": "dev-01", "ambientTemp": {"currentValue": 72}}
+
+    data = await coordinator._async_update_data()
+    assert "dev-01" in data
+    assert data["dev-01"].daily_usage == 15.0
+    assert "dev-01" in coordinator._cached_devices
+
+    # Second poll encounters upstream outage (e.g. HTTP 500 or ConnectionError)
+    mock_client.get_status.side_effect = StreamLabsError("500 Internal Server Error")
+
+    data_during_outage = await coordinator._async_update_data()
+    # State MUST be preserved, not wiped or flapped!
+    assert "dev-01" in data_during_outage
+    assert data_during_outage["dev-01"].daily_usage == 15.0
+    assert data_during_outage["dev-01"].device_name == "Main Water Monitor"
+
+
+@pytest.mark.asyncio
+async def test_coordinator_preserves_state_on_empty_payload(mock_hass, mock_client):
+    entry = MagicMock()
+    entry.data = {}
+    coordinator = StreamlabsCoordinator(mock_hass, entry, mock_client)
+
+    # First poll succeeds
+    mock_client.get_status.return_value = {
+        "devices": [
+            {
+                "location_id": "loc-1",
+                "device_id": "dev-01",
+                "connected": True,
+                "flowing": False,
+                "gallons_today": 20.0,
+            }
+        ]
+    }
+    mock_client.get_water_usage.return_value = {"today": 20.0, "thisMonth": 200.0, "thisYear": 2000.0}
+    mock_client.get_device.return_value = {"deviceId": "dev-01"}
+
+    data = await coordinator._async_update_data()
+    assert "dev-01" in data
+
+    # Cloud returns empty devices list
+    mock_client.get_status.return_value = {"devices": []}
+    data_empty = await coordinator._async_update_data()
+
+    # Must preserve cached device state
+    assert "dev-01" in data_empty
+    assert data_empty["dev-01"].daily_usage == 20.0
+
+
+@pytest.mark.asyncio
+async def test_coordinator_log_spam_throttling_and_recovery(mock_hass, mock_client):
+    entry = MagicMock()
+    entry.data = {}
+    coordinator = StreamlabsCoordinator(mock_hass, entry, mock_client)
+
+    # Initial successful poll to populate cache
+    mock_client.get_status.return_value = {
+        "devices": [{"location_id": "loc-1", "device_id": "dev-01", "connected": True, "flowing": False}]
+    }
+    mock_client.get_water_usage.return_value = {"today": 5.0}
+    mock_client.get_device.return_value = {"deviceId": "dev-01"}
+    await coordinator._async_update_data()
+
+    # Outage starts
+    mock_client.get_status.side_effect = StreamLabsError("Gateway timeout")
+
+    with patch("custom_components.streamlabs_libre.coordinator.LOGGER") as mock_logger:
+        # Attempt 1: Warning
+        await coordinator._async_update_data()
+        assert coordinator._consecutive_failures == 1
+        assert mock_logger.warning.call_count == 1
+
+        # Attempt 2: Warning
+        await coordinator._async_update_data()
+        assert coordinator._consecutive_failures == 2
+        assert mock_logger.warning.call_count == 2
+
+        # Attempt 3: Warning
+        await coordinator._async_update_data()
+        assert coordinator._consecutive_failures == 3
+        assert mock_logger.warning.call_count == 3
+
+        # Attempt 4: Suppressed to DEBUG, warning count unchanged!
+        await coordinator._async_update_data()
+        assert coordinator._consecutive_failures == 4
+        assert mock_logger.warning.call_count == 3
+        assert any("StreamLabs API outage ongoing" in str(c[0][0]) for c in mock_logger.debug.call_args_list)
+
+        # Attempt 5: Still throttled
+        await coordinator._async_update_data()
+        assert coordinator._consecutive_failures == 5
+        assert mock_logger.warning.call_count == 3
+
+        # Outage recovers!
+        mock_client.get_status.side_effect = None
+        await coordinator._async_update_data()
+        assert coordinator._consecutive_failures == 0
+        assert any(
+            "StreamLabs cloud connection restored after %d failed attempt(s)" in str(c[0][0]) and c[0][1] == 5
+            for c in mock_logger.info.call_args_list
+        )
+
+
+def test_coordinator_deadlock_prevention_auxiliary_failure_backoff(mock_hass, mock_client):
+    """Test that failure in auxiliary fetch (endpoint #3 / #4) backs off and does not starve routine polling."""
+    entry = MagicMock()
+    entry.data = {}
+    coordinator = StreamlabsCoordinator(mock_hass, entry, mock_client)
+
+    mock_client.get_status.return_value = {
+        "devices": [{"location_id": "loc-1", "device_id": "dev-01", "connected": True, "flowing": True}]
+    }
+    mock_client.get_water_usage.side_effect = [
+        {"today": 10.0},  # endpoint #2 succeeds
+        StreamLabsError("Endpoint #3 failed"),  # endpoint #3 fails
+    ]
+    mock_client.get_device.side_effect = StreamLabsError("Endpoint #4 failed")
+
+    with patch("time.monotonic", return_value=1000.0):
+        data = coordinator._update_data()
+
+    assert "dev-01" in data
+    # Both auxiliary endpoints must have had their last_fetched timestamp recorded to back off
+    assert coordinator._yearly_cache["dev-01"]["last_fetched"] == 1000.0
+    assert coordinator._telemetry_cache["dev-01"]["last_fetched"] == 1000.0
+
+    # Next poll 10s later (within backoff window):
+    # Auxiliary endpoints #3 and #4 MUST NOT be called again, allowing routine polling to proceed smoothly!
+    mock_client.get_water_usage.reset_mock()
+    mock_client.get_device.reset_mock()
+    mock_client.get_water_usage.side_effect = None
+    mock_client.get_water_usage.return_value = {"today": 10.1}
+
+    with patch("time.monotonic", return_value=1010.0):
+        data2 = coordinator._update_data()
+
+    assert "dev-01" in data2
+    # Only endpoint #2 was called; endpoint #3 and #4 were backed off!
+    assert mock_client.get_water_usage.call_count == 1
+    assert mock_client.get_device.call_count == 0
+
+
 

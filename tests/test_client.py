@@ -241,3 +241,55 @@ def test_extract_reading_value():
     assert extract_reading_value({"currentValue": "invalid"}) is None
     assert extract_reading_value("not_a_number") is None
 
+
+def test_validate_response_detects_error_payloads(client, mock_cognito):
+    from custom_components.streamlabs_libre.client import StreamLabsError
+
+    # 1. {"error": "..."}
+    with patch.object(client.session, "get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.content = b'{"error": "Unauthorized device"}'
+        mock_get.return_value.json.return_value = {"error": "Unauthorized device"}
+        with pytest.raises(StreamLabsError, match="StreamLabs API returned error payload: Unauthorized device"):
+            client.get_locations()
+
+    # 2. {"errors": [{"message": "Rate limit exceeded"}]}
+    with patch.object(client.session, "get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.content = b'{"errors": [{"message": "Rate limit exceeded"}]}'
+        mock_get.return_value.json.return_value = {"errors": [{"message": "Rate limit exceeded"}]}
+        with pytest.raises(StreamLabsError, match="StreamLabs API returned error payload: Rate limit exceeded"):
+            client.get_device("dev-01")
+
+    # 3. {"code": 500, "message": "Internal error"}
+    with patch.object(client.session, "get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.content = b'{"code": 500, "message": "Internal error"}'
+        mock_get.return_value.json.return_value = {"code": 500, "message": "Internal error"}
+        with pytest.raises(StreamLabsError, match="StreamLabs API error \\(500\\): Internal error"):
+            client.get_water_usage("dev-01")
+
+    # 4. {"statusCode": 503, "message": "Service unavailable"}
+    with patch.object(client.session, "post") as mock_post:
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.content = b'{"statusCode": 503, "message": "Service unavailable"}'
+        mock_post.return_value.json.return_value = {"statusCode": 503, "message": "Service unavailable"}
+        with pytest.raises(StreamLabsError, match="StreamLabs API error \\(503\\): Service unavailable"):
+            client.set_valve("dev-01", "open")
+
+    # 5. {"ErrorMessage": "Valve jammed", "ReturnCode": 10}
+    with patch.object(client.session, "post") as mock_post:
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.content = b'{"ErrorMessage": "Valve jammed", "ReturnCode": 10}'
+        mock_post.return_value.json.return_value = {"ErrorMessage": "Valve jammed", "ReturnCode": 10}
+        with pytest.raises(StreamLabsError, match="StreamLabs API error: Valve jammed"):
+            client.set_valve("dev-01", "close")
+
+
+def test_http_500_raises_connection_error(client, mock_cognito):
+    with patch.object(client.session, "get") as mock_get:
+        mock_get.return_value.status_code = 500
+        mock_get.return_value.raise_for_status.side_effect = requests.HTTPError("500 Server Error")
+        with pytest.raises(StreamLabsConnectionError, match="HTTP request failed \\(500\\)"):
+            client.get_locations()
+
