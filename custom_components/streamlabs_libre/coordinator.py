@@ -445,46 +445,64 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
                     if cached_telemetry:
                         device_detail = cached_telemetry.get("data", {})
 
-            # Calculate estimated flow rate (gpm) between consecutive waterOn polls
+            # Calculate estimated flow rate (gpm) during waterOn polling
             is_flowing = bool(dev.get("flowing", False))
             tracking = self._flow_tracking.setdefault(
                 device_id,
                 {
                     "prev_flowing": False,
-                    "baseline_usage": None,
-                    "baseline_time": None,
+                    "initial_usage": None,
+                    "history": [],
                     "estimated_flow_rate": 0.0,
                 },
             )
 
             if not is_flowing:
                 tracking["prev_flowing"] = False
-                tracking["baseline_usage"] = None
-                tracking["baseline_time"] = None
+                tracking["initial_usage"] = None
+                tracking["history"] = []
                 tracking["estimated_flow_rate"] = 0.0
             else:
-                if not tracking["prev_flowing"] or tracking["baseline_usage"] is None:
-                    # First poll of water-on event: establish baseline
+                if not tracking["prev_flowing"] or tracking["initial_usage"] is None:
+                    # First poll of water-on event: record initial usage, wait for cloud sync flush
                     tracking["prev_flowing"] = True
-                    tracking["baseline_usage"] = daily_usage
-                    tracking["baseline_time"] = now_mono
+                    tracking["initial_usage"] = daily_usage
+                    tracking["history"] = []
+                    tracking["estimated_flow_rate"] = 0.0
+                elif not tracking["history"]:
+                    # Absorb initial cloud sync backlog: do not calculate rate on first advance
+                    if daily_usage > tracking["initial_usage"]:
+                        # Cloud pre-sync backlog has flushed; establish baseline here
+                        tracking["history"].append((daily_usage, now_mono))
+                    elif daily_usage < tracking["initial_usage"]:
+                        # Midnight rollover
+                        tracking["initial_usage"] = daily_usage
                     tracking["estimated_flow_rate"] = 0.0
                 else:
-                    # Subsequent poll while water is still running: calculate rate
-                    prev_usage = tracking["baseline_usage"]
-                    prev_time = tracking["baseline_time"]
-                    delta_time = now_mono - prev_time
-                    delta_gallons = daily_usage - prev_usage
-
-                    if delta_time > 0 and delta_gallons >= 0:
-                        delta_minutes = delta_time / 60.0
-                        tracking["estimated_flow_rate"] = round(delta_gallons / delta_minutes, 1)
-                    elif delta_gallons < 0:
-                        # Daily rollover counter reset
+                    # Daily rollover check
+                    last_usage = tracking["history"][-1][0]
+                    if daily_usage < last_usage:
+                        tracking["initial_usage"] = daily_usage
+                        tracking["history"] = []
                         tracking["estimated_flow_rate"] = 0.0
+                    else:
+                        # Append new sample point
+                        tracking["history"].append((daily_usage, now_mono))
+                        # Keep at most 3 points: [t_{n-2}, t_{n-1}, t_n]
+                        if len(tracking["history"]) > 3:
+                            tracking["history"].pop(0)
 
-                    tracking["baseline_usage"] = daily_usage
-                    tracking["baseline_time"] = now_mono
+                        # Calculate flow rate across up to 2 intervals (approx 2x waterOn interval)
+                        # to eliminate cloud quantization/batching jitter between adjacent polls
+                        baseline_point = tracking["history"][0]
+                        current_point = tracking["history"][-1]
+
+                        delta_time = current_point[1] - baseline_point[1]
+                        delta_gallons = current_point[0] - baseline_point[0]
+
+                        if delta_time > 0 and delta_gallons >= 0:
+                            delta_minutes = delta_time / 60.0
+                            tracking["estimated_flow_rate"] = round(delta_gallons / delta_minutes, 1)
 
             estimated_flow_rate = tracking["estimated_flow_rate"]
 

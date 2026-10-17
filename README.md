@@ -79,9 +79,11 @@ To customize how frequently Home Assistant polls the StreamLabs cloud and config
 4. Click **Submit**—Home Assistant will immediately reload the coordinator.
 
 **How Flow Rate Estimation Works**:
-When water starts flowing, the coordinator dynamically switches to the rapid **Water on interval**. On the first poll of the event, it captures the baseline. On subsequent rapid polls while water is running, it calculates the real-time flow rate from the change in daily water usage over the elapsed interval:
-$$\text{Estimated GPM} = \frac{\Delta\text{gallons}}{\Delta t_\text{seconds} / 60}$$
-When the water is turned off, the sensor immediately resets to `0.0 gpm` and the coordinator returns to the gentle **Water off interval**.
+When water starts flowing, the coordinator dynamically accelerates to the rapid **Water on interval**. To guarantee reliable readings free of cloud artifacts, flow rate estimation implements two signal-smoothing stages:
+1. **Pre-Sync Backlog Absorption (No Initial Spikes):** When flow begins, the cloud usage counter may lag behind the flow state. Rather than calculating rate across that delayed initial jump, the coordinator absorbs the first usage increment as the synchronized baseline, preventing false spike alarms (e.g. 13+ gpm).
+2. **Double-Interval Moving Window (Jitter Smoothing):** During continuous flow, StreamLabs cloud packet batching can produce complementary high/low readings across adjacent single polls (e.g. 1.9 gpm followed by 3.0 gpm). The coordinator calculates flow rate across a **2-poll moving window** ($\approx 2 \times \text{Water on interval}$, using actual monotonic timestamps). This mathematically neutralizes packet boundary jitter on every poll without delaying real physical flow rate shifts:
+$$\text{Estimated GPM} = \frac{\text{Usage}(t_n) - \text{Usage}(t_{n-2})}{(t_n - t_{n-2}) / 60}$$
+When water is turned off, the sensor immediately resets to `0.0 gpm` and the coordinator returns to the gentle **Water off interval**.
 
 
 ---

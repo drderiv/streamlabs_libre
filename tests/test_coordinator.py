@@ -292,43 +292,127 @@ def test_coordinator_dynamic_intervals_and_flow_rate(mock_hass, mock_client):
     assert mock_client.get_device.call_count == 1
 
     # 2. Second poll: Water turns ON (flowing == True) - First poll transition
-    # Should establish baseline and report 0.0 gpm; interval switches to 10s
+    # Captures initial usage, reports 0.0 gpm; interval switches to 10s
     mock_client.get_status.return_value["devices"][0]["flowing"] = True
-    mock_client.get_water_usage.return_value["today"] = 10.2
+    mock_client.get_water_usage.return_value["today"] = 10.0
 
     with patch("time.monotonic", return_value=1060.0):
         data2 = coordinator._update_data()
 
     assert data2["dev-01"].flowing is True
-    assert data2["dev-01"].estimated_flow_rate == 0.0  # Baseline established
+    assert data2["dev-01"].estimated_flow_rate == 0.0  # Initial flow detected
     assert coordinator.update_interval == timedelta(seconds=10)
     # 60s elapsed since t=1000.0, so get_device was called again
     assert mock_client.get_device.call_count == 2
 
-    # 3. Third poll: Water still ON 10s later; daily usage increased by 0.5 gal
-    # delta_time = 10s = 10/60 min = 0.1667 min. delta_gallons = 0.5 gal.
-    # gpm = 0.5 / (10/60) = 3.0 gpm
-    mock_client.get_water_usage.return_value["today"] = 10.7
+    # 3. Third poll: Cloud pre-sync backlog flushes (+2.0 gal jump)
+    # Absorbs the backlog spike without calculating an erroneous spike rate; re-baselines here
+    mock_client.get_water_usage.return_value["today"] = 12.0
 
     with patch("time.monotonic", return_value=1070.0):
         data3 = coordinator._update_data()
 
     assert data3["dev-01"].flowing is True
-    assert data3["dev-01"].estimated_flow_rate == 3.0
+    assert data3["dev-01"].estimated_flow_rate == 0.0  # Backlog spike absorbed!
     assert coordinator.update_interval == timedelta(seconds=10)
     # Only 10s elapsed since t=1060.0 (< 60s waterOff interval), so get_device was CACHED!
     assert mock_client.get_device.call_count == 2
 
-    # 4. Fourth poll: Water turns OFF (flowing == False)
-    mock_client.get_status.return_value["devices"][0]["flowing"] = False
-    mock_client.get_water_usage.return_value["today"] = 11.0
+    # 4. Fourth poll: Water still ON 10s later; daily usage increased by 0.5 gal
+    # delta_time = 10s = 0.1667 min. delta_gallons = 0.5 gal.
+    # gpm = 0.5 / (10/60) = 3.0 gpm
+    mock_client.get_water_usage.return_value["today"] = 12.5
 
     with patch("time.monotonic", return_value=1080.0):
         data4 = coordinator._update_data()
 
-    assert data4["dev-01"].flowing is False
-    assert data4["dev-01"].estimated_flow_rate == 0.0
+    assert data4["dev-01"].flowing is True
+    assert data4["dev-01"].estimated_flow_rate == 3.0
+    assert coordinator.update_interval == timedelta(seconds=10)
+
+    # 5. Fifth poll: 10s later, steady flow +0.5 gal (now 2-poll moving window is active)
+    # delta_time = 20s (2x waterOn interval). delta_gallons = 13.0 - 12.0 = 1.0 gal.
+    # gpm = 1.0 / (20/60) = 3.0 gpm
+    mock_client.get_water_usage.return_value["today"] = 13.0
+
+    with patch("time.monotonic", return_value=1090.0):
+        data5 = coordinator._update_data()
+
+    assert data5["dev-01"].flowing is True
+    assert data5["dev-01"].estimated_flow_rate == 3.0
+
+    # 6. Sixth poll: Water turns OFF (flowing == False)
+    mock_client.get_status.return_value["devices"][0]["flowing"] = False
+    mock_client.get_water_usage.return_value["today"] = 13.0
+
+    with patch("time.monotonic", return_value=1100.0):
+        data6 = coordinator._update_data()
+
+    assert data6["dev-01"].flowing is False
+    assert data6["dev-01"].estimated_flow_rate == 0.0
     assert coordinator.update_interval == timedelta(seconds=60)
+
+
+def test_coordinator_flow_rate_jitter_smoothing(mock_hass, mock_client):
+    """Test that a 2-poll moving window (2x waterOn interval) smooths quantization jitter."""
+    from custom_components.streamlabs_libre.const import (
+        CONF_WATER_OFF_INTERVAL,
+        CONF_WATER_ON_INTERVAL,
+    )
+
+    entry = MagicMock()
+    entry.options = {
+        CONF_WATER_OFF_INTERVAL: 60,
+        CONF_WATER_ON_INTERVAL: 15,
+    }
+    entry.data = {}
+    coordinator = StreamlabsCoordinator(mock_hass, entry, mock_client)
+
+    mock_client.get_status.return_value = {
+        "devices": [
+            {
+                "location_id": "loc-1",
+                "device_id": "dev-01",
+                "connected": True,
+                "flowing": True,
+                "gallons_today": 100.0,
+            }
+        ]
+    }
+    mock_client.get_water_usage.return_value = {"today": 100.0}
+    mock_client.get_device.return_value = {"deviceId": "dev-01"}
+
+    # 1. Flow starts, initial reading recorded
+    with patch("time.monotonic", return_value=1000.0):
+        d1 = coordinator._update_data()
+    assert d1["dev-01"].estimated_flow_rate == 0.0
+
+    # 2. Cloud sync backlog flushes: jumps from 100.0 to 103.3
+    # Absorbed with 0.0 gpm; baseline established at 103.3
+    mock_client.get_water_usage.return_value["today"] = 103.3
+    with patch("time.monotonic", return_value=1015.0):
+        d2 = coordinator._update_data()
+    assert d2["dev-01"].estimated_flow_rate == 0.0
+
+    # 3. First regular interval: +0.625 gal in 15s (2.5 gpm)
+    mock_client.get_water_usage.return_value["today"] = 103.925
+    with patch("time.monotonic", return_value=1030.0):
+        d3 = coordinator._update_data()
+    assert d3["dev-01"].estimated_flow_rate == 2.5
+
+    # 4. Jitter poll 1: cloud buffer delays packet; only +0.475 gal arrives (single-poll would say 1.9 gpm)
+    # But 2-poll window over 30s: (104.40 - 103.3) / 0.5 min = 1.1 / 0.5 = 2.2 gpm (smoothed!)
+    mock_client.get_water_usage.return_value["today"] = 104.40
+    with patch("time.monotonic", return_value=1045.0):
+        d4 = coordinator._update_data()
+    assert d4["dev-01"].estimated_flow_rate == 2.2
+
+    # 5. Jitter poll 2: cloud catches up with remainder (+0.775 gal; single-poll would spike to 3.1 gpm)
+    # But 2-poll window over 30s: (105.175 - 103.925) / 0.5 min = 1.25 / 0.5 = 2.5 gpm (exact steady rate!)
+    mock_client.get_water_usage.return_value["today"] = 105.175
+    with patch("time.monotonic", return_value=1060.0):
+        d5 = coordinator._update_data()
+    assert d5["dev-01"].estimated_flow_rate == 2.5
 
 
 @pytest.mark.asyncio
