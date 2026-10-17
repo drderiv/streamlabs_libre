@@ -81,12 +81,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: StreamlabsConfigEntry) -
 async def async_remove_config_entry_device(
     hass: HomeAssistant, entry: StreamlabsConfigEntry, dev_entry: dr.DeviceEntry
 ) -> bool:
-    """Allow user to remove an unmonitored device directly from the UI."""
+    """Allow user to remove a device directly from the UI."""
     coordinator = getattr(entry, "runtime_data", None)
+    LOGGER.warning(
+        "User manually requested deletion of device %s (identifiers=%s). Currently monitored devices: %s",
+        dev_entry.id,
+        dev_entry.identifiers,
+        list(coordinator.data.keys()) if (coordinator and hasattr(coordinator, "data")) else None,
+    )
     if coordinator and hasattr(coordinator, "data"):
         for domain, dev_id in dev_entry.identifiers:
-            if domain == DOMAIN and dev_id in coordinator.data:
-                return False
+            if domain == DOMAIN:
+                coordinator.data.pop(dev_id, None)
+                if hasattr(coordinator, "_cached_devices"):
+                    coordinator._cached_devices.pop(dev_id, None)
     return True
 
 

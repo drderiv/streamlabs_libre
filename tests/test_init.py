@@ -118,11 +118,8 @@ async def test_async_setup_entry_cleans_up_unmonitored_devices(mock_hass):
         mock_dev_reg.async_remove_device.assert_called_once_with("reg_id_2")
 
         # Verify async_remove_config_entry_device:
-        # Active device dev-1 cannot be removed via UI
-        can_remove_monitored = await async_remove_config_entry_device(mock_hass, entry, entry_monitored)
-        assert can_remove_monitored is False
-
-        # Stale device dev-2 can be removed via UI
-        can_remove_stale = await async_remove_config_entry_device(mock_hass, entry, entry_stale)
-        assert can_remove_stale is True
+        # Manual UI deletion is allowed and pops device from coordinator data
+        can_remove = await async_remove_config_entry_device(mock_hass, entry, entry_monitored)
+        assert can_remove is True
+        assert "dev-1" not in entry.runtime_data.data
 

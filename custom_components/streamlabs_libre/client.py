@@ -201,7 +201,18 @@ class StreamLabsClient:
 
         if device_id:
             raise StreamLabsDeviceNotFoundError(f"Device ID '{device_id}' was not found in account.")
-        return {"devices": devices}
+
+        locations_summary = [
+            {
+                "location_id": str(loc.get("locationId") or loc.get("location_id") or loc.get("id")),
+                "location_name": loc.get("locationName") or loc.get("name"),
+                "device_ids": [d.get("deviceId") for d in loc.get("devices", []) if isinstance(d, dict)],
+            }
+            for loc in data.get("locations", [])
+            if isinstance(loc, dict)
+        ]
+
+        return {"devices": devices, "locations_summary": locations_summary}
 
     def get_device(self, device_id: str) -> Dict[str, Any]:
         """

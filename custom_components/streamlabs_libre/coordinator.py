@@ -314,21 +314,43 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
         """Synchronously poll the API for device and location statuses."""
         status_resp = self.client.get_status()
         raw_devices: List[Dict[str, Any]] = status_resp.get("devices", [])
+        locations_summary = status_resp.get("locations_summary", [])
         devices_data: Dict[str, StreamLabsDeviceData] = {}
+
+        raw_options = getattr(self.config_entry, "options", None)
+        options = raw_options if isinstance(raw_options, dict) else {}
+        raw_data = getattr(self.config_entry, "data", None)
+        data = raw_data if isinstance(raw_data, dict) else {}
+
+        _LOGGER.warning(
+            "StreamLabs API account locations: %s | Active monitored_locations: %s (options=%s, data=%s)",
+            locations_summary,
+            self.monitored_locations,
+            options.get(CONF_LOCATIONS),
+            data.get(CONF_LOCATIONS),
+        )
 
         for dev in raw_devices:
             raw_loc_id = dev.get("location_id")
             loc_id = str(raw_loc_id) if raw_loc_id is not None else None
             dev_id = dev.get("device_id")
             if self.monitored_locations is not None and (loc_id is None or loc_id not in self.monitored_locations):
-                _LOGGER.info(
-                    "Skipping unmonitored StreamLabs device %s ('%s') at location %s ('%s')",
+                _LOGGER.warning(
+                    "SKIPPING unmonitored StreamLabs device %s ('%s') at location %s ('%s')",
                     dev_id,
                     dev.get("device_name"),
                     loc_id,
                     dev.get("location_name"),
                 )
                 continue
+
+            _LOGGER.warning(
+                "INCLUDING monitored StreamLabs device %s ('%s') at location %s ('%s')",
+                dev_id,
+                dev.get("device_name"),
+                loc_id,
+                dev.get("location_name"),
+            )
 
             device_id = dev_id
             if not device_id:
