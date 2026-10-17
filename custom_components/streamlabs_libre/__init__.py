@@ -83,7 +83,7 @@ async def async_remove_config_entry_device(
 ) -> bool:
     """Allow user to remove a device directly from the UI and unmonitor its location."""
     coordinator = getattr(entry, "runtime_data", None)
-    LOGGER.warning(
+    LOGGER.info(
         "User manually requested deletion of device %s (identifiers=%s). Currently monitored devices: %s",
         dev_entry.id,
         dev_entry.identifiers,
@@ -130,7 +130,7 @@ async def async_remove_config_entry_device(
             new_opts = dict(entry.options or {})
             new_opts[CONF_LOCATIONS] = list(remaining_monitored)
             hass.config_entries.async_update_entry(entry, options=new_opts)
-            LOGGER.warning(
+            LOGGER.info(
                 "Updated monitored locations after device deletion to: %s",
                 new_opts[CONF_LOCATIONS],
             )

@@ -132,6 +132,7 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
         self._flow_tracking: Dict[str, Dict[str, Any]] = {}
 
         self._pending_options_update: Optional[Dict[str, Any]] = None
+        self._logged_device_monitoring: Dict[str, bool] = {}
 
         # Cached device state dictionary to preserve last known valid state across outages
         self._cached_devices: Dict[str, StreamLabsDeviceData] = {}
@@ -346,7 +347,7 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
         raw_data = getattr(self.config_entry, "data", None)
         data = raw_data if isinstance(raw_data, dict) else {}
 
-        _LOGGER.warning(
+        _LOGGER.debug(
             "StreamLabs API account locations: %s | Active monitored_locations: %s (options=%s, data=%s)",
             locations_summary,
             self.monitored_locations,
@@ -363,7 +364,7 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
             }
             if matching_loc_ids and len(matching_loc_ids) < len(locations_summary):
                 self.monitored_locations = matching_loc_ids
-                _LOGGER.warning(
+                _LOGGER.info(
                     "Auto-detected monitored locations based on existing Home Assistant device registry: %s",
                     self.monitored_locations,
                 )
@@ -375,23 +376,36 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
             raw_loc_id = dev.get("location_id")
             loc_id = str(raw_loc_id) if raw_loc_id is not None else None
             dev_id = dev.get("device_id")
-            if self.monitored_locations is not None and (loc_id is None or loc_id not in self.monitored_locations):
-                _LOGGER.warning(
-                    "SKIPPING unmonitored StreamLabs device %s ('%s') at location %s ('%s')",
-                    dev_id,
-                    dev.get("device_name"),
-                    loc_id,
-                    dev.get("location_name"),
-                )
+            if not dev_id:
                 continue
 
-            _LOGGER.warning(
-                "INCLUDING monitored StreamLabs device %s ('%s') at location %s ('%s')",
-                dev_id,
-                dev.get("device_name"),
-                loc_id,
-                dev.get("location_name"),
+            is_monitored = not (
+                self.monitored_locations is not None
+                and (loc_id is None or loc_id not in self.monitored_locations)
             )
+
+            # Log device inclusion or exclusion once per monitoring state at INFO level
+            if self._logged_device_monitoring.get(dev_id) != is_monitored:
+                self._logged_device_monitoring[dev_id] = is_monitored
+                if is_monitored:
+                    _LOGGER.info(
+                        "Including monitored StreamLabs device %s ('%s') at location %s ('%s')",
+                        dev_id,
+                        dev.get("device_name"),
+                        loc_id,
+                        dev.get("location_name"),
+                    )
+                else:
+                    _LOGGER.info(
+                        "Skipping unmonitored StreamLabs device %s ('%s') at location %s ('%s')",
+                        dev_id,
+                        dev.get("device_name"),
+                        loc_id,
+                        dev.get("location_name"),
+                    )
+
+            if not is_monitored:
+                continue
 
             device_id = dev_id
             if not device_id:

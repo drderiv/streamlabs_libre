@@ -749,6 +749,44 @@ async def test_coordinator_auto_detect_subset_from_registry(mock_hass, mock_clie
     )
 
 
+def test_coordinator_logs_monitoring_status_once(mock_hass, mock_client, caplog):
+    import logging
+    from custom_components.streamlabs_libre.const import CONF_LOCATIONS
+    from custom_components.streamlabs_libre.coordinator import StreamlabsCoordinator
+
+    entry = MagicMock()
+    entry.options = {CONF_LOCATIONS: ["loc-pn"]}
+    entry.data = {}
+
+    coordinator = StreamlabsCoordinator(mock_hass, entry, mock_client)
+    mock_client.get_status.return_value = {
+        "devices": [
+            {"location_id": "loc-pn", "device_id": "dev-pn", "device_name": "PN", "location_name": "PN"},
+            {"location_id": "loc-np", "device_id": "dev-np", "device_name": "NP", "location_name": "NP"},
+        ]
+    }
+    mock_client.get_water_usage.return_value = {"today": 5.0}
+
+    with caplog.at_level(logging.INFO):
+        caplog.clear()
+        coordinator._update_data()
+        assert "Including monitored StreamLabs device dev-pn" in caplog.text
+        assert "Skipping unmonitored StreamLabs device dev-np" in caplog.text
+
+        # Second poll: should NOT log again
+        caplog.clear()
+        coordinator._update_data()
+        assert "Including monitored StreamLabs device dev-pn" not in caplog.text
+        assert "Skipping unmonitored StreamLabs device dev-np" not in caplog.text
+
+        # Dynamically change monitored locations to include NP too
+        coordinator.monitored_locations = {"loc-pn", "loc-np"}
+        caplog.clear()
+        coordinator._update_data()
+        assert "Including monitored StreamLabs device dev-np" in caplog.text
+
+
+
 
 
 
