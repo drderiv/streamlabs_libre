@@ -135,3 +135,50 @@ def test_async_get_options_flow():
     handler = StreamlabsConfigFlow.async_get_options_flow(mock_entry)
     assert isinstance(handler, StreamlabsOptionsFlowHandler)
 
+
+@pytest.mark.asyncio
+async def test_options_flow_multi_location():
+    from custom_components.streamlabs_libre.config_flow import StreamlabsOptionsFlowHandler
+    from custom_components.streamlabs_libre.const import (
+        CONF_LOCATIONS,
+        CONF_WATER_OFF_INTERVAL,
+        CONF_WATER_ON_INTERVAL,
+    )
+
+    mock_coordinator = MagicMock()
+    mock_coordinator.client.get_locations.return_value = {
+        "locations": [
+            {"locationId": "loc-home", "locationName": "Main Home"},
+            {"locationId": "loc-cabin", "locationName": "Mountain Cabin"},
+        ]
+    }
+
+    mock_entry = MagicMock()
+    mock_entry.options = {
+        CONF_LOCATIONS: ["loc-home"],
+        CONF_WATER_OFF_INTERVAL: 60,
+        CONF_WATER_ON_INTERVAL: 15,
+    }
+    mock_entry.data = {}
+    mock_entry.runtime_data = mock_coordinator
+
+    flow = StreamlabsOptionsFlowHandler()
+    flow.config_entry = mock_entry
+    flow.hass = MagicMock()
+    flow.hass.async_add_executor_job = AsyncMock(side_effect=lambda func, *args: func(*args))
+
+    form_result = await flow.async_step_init()
+    assert form_result["type"] == "form"
+    assert form_result["step_id"] == "init"
+
+    # Submit updated options keeping only loc-cabin
+    submit_result = await flow.async_step_init({
+        CONF_LOCATIONS: ["loc-cabin"],
+        CONF_WATER_OFF_INTERVAL: 90,
+        CONF_WATER_ON_INTERVAL: 10,
+    })
+    assert submit_result["type"] == "create_entry"
+    assert submit_result["data"][CONF_LOCATIONS] == ["loc-cabin"]
+    assert submit_result["data"][CONF_WATER_OFF_INTERVAL] == 90
+    assert submit_result["data"][CONF_WATER_ON_INTERVAL] == 10
+

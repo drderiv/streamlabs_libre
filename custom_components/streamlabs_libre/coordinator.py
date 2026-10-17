@@ -110,7 +110,7 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
         )
         self.client = client
         self.monitored_locations: Optional[Set[str]] = None
-        locations_cfg = config_entry.data.get(CONF_LOCATIONS)
+        locations_cfg = options.get(CONF_LOCATIONS, data.get(CONF_LOCATIONS))
         if locations_cfg:
             self.monitored_locations = set(locations_cfg)
         self._yearly_cache: Dict[str, Dict[str, Any]] = {}

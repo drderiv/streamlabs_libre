@@ -4,9 +4,9 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1%2B-blue)](https://www.home-assistant.io/)
 
-**StreamLabs Libre** is a modern, subscription-free Home Assistant integration and standalone automation suite for StreamLabs Water Monitors and Shutoff Valves (StreamLabs Monitor & StreamLabs Control).
+**StreamLabs Libre** is a subscription-free Home Assistant integration and standalone automation suite for StreamLabs Water Monitors and Shutoff Valves (StreamLabs Monitor & StreamLabs Control).
 
-The official Home Assistant core integration lacks shutoff valve actuation and omits real-time flow telemetry. **StreamLabs Libre** implements the mobile application's cloud telemetry and authentication to bring native shutoff valve actuation, home/away mode switching, and real-time consumption sensors directly into Home Assistant.
+The official Home Assistant core integration lacks shutoff valve actuation and omits real-time flow telemetry. **StreamLabs Libre** implements nothing more than the free mobile application's cloud telemetry and authentication to bring native shutoff valve actuation, home/away mode switching, and real-time consumption sensors directly into Home Assistant.
 
 ---
 
@@ -125,19 +125,6 @@ The StreamLabs API supports direct hardware maintenance routines via `POST /devi
 | **Drip Detect** | `{"command": "run drip detect"}` | Performs a diagnostic slow-drip test |
 | **Calibrate** | `{"command": "calibrate"}` | Triggers flow sensor recalibration |
 | **Identify** | `{"command": "identify"}` | Blinks LED hardware ring |
-
----
-
-## Completed Deliverables & Roadmap
-
-- [x] Native Home Assistant HACS Integration (`custom_components/streamlabs_libre`)
-- [x] Native `ValveEntity` with zero subscription requirement (named **Water valve**)
-- [x] Environmental Telemetry: Room Temp, Room Humidity, Water Temp, Water Pressure
-- [x] Optimistic UI mode switching (`Home` / `Away`)
-- [x] Dynamic Polling Options Flow (`scan_interval` 10s–300s)
-- [x] Multi-location selection flow
-- [x] Standalone CLI controller (`streamlabs_cli.py`)
-- [x] Standalone Dockerized MQTT Bridge service with Home Assistant MQTT Auto-Discovery ([mqtt_bridge/README.md](mqtt_bridge/README.md))
 
 ---
 

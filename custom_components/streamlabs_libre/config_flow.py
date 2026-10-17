@@ -176,11 +176,35 @@ class StreamlabsOptionsFlowHandler(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Manage the options."""
-        if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
-
         options = self.config_entry.options or {}
         data = self.config_entry.data or {}
+
+        # Discover all available locations on the account if coordinator is available
+        current_locations: List[str] = options.get(CONF_LOCATIONS, data.get(CONF_LOCATIONS, []))
+        location_options: Dict[str, str] = {}
+        coordinator = getattr(self.config_entry, "runtime_data", None)
+        if coordinator and hasattr(coordinator, "client"):
+            try:
+                resp = await self.hass.async_add_executor_job(coordinator.client.get_locations)
+                if isinstance(resp, dict):
+                    for loc in resp.get("locations", []):
+                        if "locationId" in loc:
+                            location_options[loc["locationId"]] = (
+                                loc.get("locationName") or f"Location {loc['locationId']}"
+                            )
+            except Exception as err:
+                LOGGER.debug("Could not fetch locations in options flow: %s", err)
+
+        # Fallback to current_locations if get_locations was unavailable
+        if not location_options and current_locations:
+            location_options = {loc_id: f"Location {loc_id}" for loc_id in current_locations}
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if location_options and len(location_options) > 1 and not user_input.get(CONF_LOCATIONS):
+                errors[CONF_LOCATIONS] = "no_location_selected"
+            else:
+                return self.async_create_entry(title="", data=user_input)
 
         legacy_interval = options.get(
             CONF_SCAN_INTERVAL,
@@ -195,24 +219,36 @@ class StreamlabsOptionsFlowHandler(OptionsFlow):
             data.get(CONF_WATER_ON_INTERVAL, DEFAULT_WATER_ON_INTERVAL),
         )
 
+        schema_dict: dict[Any, Any] = {}
+        if len(location_options) > 1:
+            schema_dict[
+                vol.Required(
+                    CONF_LOCATIONS,
+                    default=current_locations or list(location_options.keys()),
+                )
+            ] = cv.multi_select(location_options)
+
+        schema_dict[
+            vol.Required(
+                CONF_WATER_OFF_INTERVAL,
+                default=current_off,
+            )
+        ] = vol.All(
+            vol.Coerce(int),
+            vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
+        )
+        schema_dict[
+            vol.Required(
+                CONF_WATER_ON_INTERVAL,
+                default=current_on,
+            )
+        ] = vol.All(
+            vol.Coerce(int),
+            vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
+        )
+
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_WATER_OFF_INTERVAL,
-                        default=current_off,
-                    ): vol.All(
-                        vol.Coerce(int),
-                        vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
-                    ),
-                    vol.Required(
-                        CONF_WATER_ON_INTERVAL,
-                        default=current_on,
-                    ): vol.All(
-                        vol.Coerce(int),
-                        vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
-                    ),
-                }
-            ),
+            data_schema=vol.Schema(schema_dict),
+            errors=errors,
         )

@@ -507,4 +507,69 @@ def test_coordinator_deadlock_prevention_auxiliary_failure_backoff(mock_hass, mo
     assert mock_client.get_device.call_count == 0
 
 
+def test_coordinator_unselected_locations_are_not_polled(mock_hass, mock_client):
+    """Verify that devices at unchecked locations generate NO auxiliary polling requests."""
+    entry = MagicMock()
+    # User checked only "loc-checked" in Configuration dialog
+    entry.options = {CONF_LOCATIONS: ["loc-checked"]}
+    entry.data = {}
+    coordinator = StreamlabsCoordinator(mock_hass, entry, mock_client)
+
+    # Cloud account has 3 leak detectors across 3 locations
+    mock_client.get_status.return_value = {
+        "devices": [
+            {
+                "location_id": "loc-checked",
+                "location_name": "Main Home",
+                "device_id": "detector-checked",
+                "device_name": "Main Monitor",
+                "connected": True,
+                "flowing": False,
+                "gallons_today": 12.0,
+            },
+            {
+                "location_id": "loc-unchecked-1",
+                "location_name": "Beach House",
+                "device_id": "detector-unchecked-1",
+                "device_name": "Beach Monitor",
+                "connected": True,
+                "flowing": True,
+                "gallons_today": 45.0,
+            },
+            {
+                "location_id": "loc-unchecked-2",
+                "location_name": "Rental Unit",
+                "device_id": "detector-unchecked-2",
+                "device_name": "Rental Monitor",
+                "connected": True,
+                "flowing": False,
+                "gallons_today": 2.0,
+            },
+        ]
+    }
+    mock_client.get_water_usage.return_value = {"today": 12.0, "thisMonth": 100.0, "thisYear": 500.0}
+    mock_client.get_device.return_value = {"deviceId": "detector-checked"}
+
+    data = coordinator._update_data()
+
+    # 1. Only the checked detector is in coordinator data
+    assert len(data) == 1
+    assert "detector-checked" in data
+    assert "detector-unchecked-1" not in data
+    assert "detector-unchecked-2" not in data
+
+    # 2. Auxiliary polling endpoints were ONLY called for the checked detector!
+    usage_called_ids = [call[0][0] for call in mock_client.get_water_usage.call_args_list]
+    device_called_ids = [call[0][0] for call in mock_client.get_device.call_args_list]
+
+    assert all(d_id == "detector-checked" for d_id in usage_called_ids)
+    assert all(d_id == "detector-checked" for d_id in device_called_ids)
+
+    # ZERO auxiliary calls made for unchecked detectors
+    assert "detector-unchecked-1" not in usage_called_ids
+    assert "detector-unchecked-2" not in usage_called_ids
+    assert "detector-unchecked-1" not in device_called_ids
+    assert "detector-unchecked-2" not in device_called_ids
+
+
 
