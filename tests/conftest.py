@@ -182,6 +182,7 @@ for mod in [
     "homeassistant.helpers",
     "homeassistant.helpers.config_validation",
     "homeassistant.helpers.device_registry",
+    "homeassistant.helpers.entity_registry",
     "homeassistant.helpers.entity_platform",
     "homeassistant.helpers.typing",
     "homeassistant.helpers.update_coordinator",

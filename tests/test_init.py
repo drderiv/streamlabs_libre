@@ -62,8 +62,9 @@ async def test_async_unload_entry(mock_hass):
 
 @pytest.mark.asyncio
 async def test_async_setup_entry_cleans_up_unmonitored_devices(mock_hass):
-    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import device_registry as dr, entity_registry as er
     from custom_components.streamlabs_libre.const import DOMAIN
+    from custom_components.streamlabs_libre import async_remove_config_entry_device
 
     entry = MagicMock()
     entry.entry_id = "test_entry_id"
@@ -76,6 +77,9 @@ async def test_async_setup_entry_cleans_up_unmonitored_devices(mock_hass):
     mock_dev_reg = MagicMock()
     dr.async_get.return_value = mock_dev_reg
 
+    mock_ent_reg = MagicMock()
+    er.async_get.return_value = mock_ent_reg
+
     entry_monitored = MagicMock()
     entry_monitored.id = "reg_id_1"
     entry_monitored.identifiers = {(DOMAIN, "dev-1")}
@@ -85,6 +89,13 @@ async def test_async_setup_entry_cleans_up_unmonitored_devices(mock_hass):
     entry_stale.identifiers = {(DOMAIN, "dev-2")}
 
     dr.async_entries_for_config_entry.return_value = [entry_monitored, entry_stale]
+
+    # Stale device has 2 entities in the entity registry
+    stale_entity_1 = MagicMock()
+    stale_entity_1.entity_id = "sensor.stale_flow_rate"
+    stale_entity_2 = MagicMock()
+    stale_entity_2.entity_id = "sensor.stale_daily_usage"
+    er.async_entries_for_device.return_value = [stale_entity_1, stale_entity_2]
 
     async def mock_first_refresh(self):
         self.data = {"dev-1": MagicMock()}
@@ -98,6 +109,20 @@ async def test_async_setup_entry_cleans_up_unmonitored_devices(mock_hass):
         result = await async_setup_entry(mock_hass, entry)
         assert result is True
 
+        # Entities belonging to stale device must be purged
+        assert mock_ent_reg.async_remove.call_count == 2
+        mock_ent_reg.async_remove.assert_any_call("sensor.stale_flow_rate")
+        mock_ent_reg.async_remove.assert_any_call("sensor.stale_daily_usage")
+
         # dev-2 (unchecked) must be removed from device registry
         mock_dev_reg.async_remove_device.assert_called_once_with("reg_id_2")
+
+        # Verify async_remove_config_entry_device:
+        # Active device dev-1 cannot be removed via UI
+        can_remove_monitored = await async_remove_config_entry_device(mock_hass, entry, entry_monitored)
+        assert can_remove_monitored is False
+
+        # Stale device dev-2 can be removed via UI
+        can_remove_stale = await async_remove_config_entry_device(mock_hass, entry, entry_stale)
+        assert can_remove_stale is True
 

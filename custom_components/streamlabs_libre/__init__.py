@@ -8,7 +8,11 @@ from .const import DOMAIN
 try:
     from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
     from homeassistant.core import HomeAssistant
-    from homeassistant.helpers import config_validation as cv, device_registry as dr
+    from homeassistant.helpers import (
+        config_validation as cv,
+        device_registry as dr,
+        entity_registry as er,
+    )
 
     from .const import DOMAIN, LOGGER
     from .coordinator import StreamlabsConfigEntry, StreamlabsCoordinator
@@ -46,22 +50,43 @@ async def async_setup_entry(hass: HomeAssistant, entry: StreamlabsConfigEntry) -
 
     entry.runtime_data = coordinator
 
-    # Remove stale/unmonitored devices from device registry
+    # Remove stale/unmonitored devices and associated entities from registries
     try:
         dev_reg = dr.async_get(hass)
+        ent_reg = er.async_get(hass)
         for dev_entry in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
             for domain, dev_id in dev_entry.identifiers:
                 if domain == DOMAIN and dev_id not in coordinator.data:
+                    # Remove all entity registry entries belonging to this device
+                    for ent_entry in er.async_entries_for_device(ent_reg, dev_entry.id):
+                        ent_reg.async_remove(ent_entry.entity_id)
+                        LOGGER.info(
+                            "Removed unmonitored entity %s for device %s from registry",
+                            ent_entry.entity_id,
+                            dev_id,
+                        )
                     dev_reg.async_remove_device(dev_entry.id)
                     LOGGER.info("Removed unmonitored StreamLabs device %s from registry", dev_id)
                     break
     except Exception as err:
-        LOGGER.debug("Could not clean up stale devices: %s", err)
+        LOGGER.warning("Could not clean up stale devices: %s", err)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     entry.async_on_unload(entry.add_update_listener(update_listener))
 
+    return True
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: StreamlabsConfigEntry, dev_entry: dr.DeviceEntry
+) -> bool:
+    """Allow user to remove an unmonitored device directly from the UI."""
+    coordinator = getattr(entry, "runtime_data", None)
+    if coordinator and hasattr(coordinator, "data"):
+        for domain, dev_id in dev_entry.identifiers:
+            if domain == DOMAIN and dev_id in coordinator.data:
+                return False
     return True
 
 

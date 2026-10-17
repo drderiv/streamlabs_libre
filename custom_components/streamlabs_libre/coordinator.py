@@ -319,10 +319,18 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
         for dev in raw_devices:
             raw_loc_id = dev.get("location_id")
             loc_id = str(raw_loc_id) if raw_loc_id is not None else None
+            dev_id = dev.get("device_id")
             if self.monitored_locations is not None and (loc_id is None or loc_id not in self.monitored_locations):
+                _LOGGER.info(
+                    "Skipping unmonitored StreamLabs device %s ('%s') at location %s ('%s')",
+                    dev_id,
+                    dev.get("device_name"),
+                    loc_id,
+                    dev.get("location_name"),
+                )
                 continue
 
-            device_id = dev.get("device_id")
+            device_id = dev_id
             if not device_id:
                 continue
 

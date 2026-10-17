@@ -6,7 +6,7 @@
 
 **StreamLabs Libre** is a subscription-free Home Assistant integration and standalone automation suite for StreamLabs Water Monitors and Shutoff Valves (StreamLabs Monitor & StreamLabs Control).
 
-The official Home Assistant core integration lacks shutoff valve actuation and omits real-time flow telemetry. **StreamLabs Libre** implements nothing more than the free mobile application's cloud telemetry and authentication to bring native shutoff valve actuation, home/away mode switching, and real-time consumption sensors directly into Home Assistant.
+The official Home Assistant core integration lacks shutoff valve actuation and omits real-time flow telemetry. **StreamLabs Libre** implements nothing more than the free mobile application's cloud telemetry (less the WebSocket-based flow rate monitoring which is replaced with a REST-based estimate; see below) and authentication to bring native shutoff valve actuation, home/away mode switching, and real-time consumption sensors directly into Home Assistant.
 
 ---
 
