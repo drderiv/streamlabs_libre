@@ -47,7 +47,7 @@ class StreamlabsConfigFlow(ConfigFlow, domain=DOMAIN):
         config_entry: ConfigEntry,
     ) -> StreamlabsOptionsFlowHandler:
         """Get the options flow for this handler."""
-        return StreamlabsOptionsFlowHandler()
+        return StreamlabsOptionsFlowHandler(config_entry)
 
     def __init__(self) -> None:
         """Initialize config flow state."""
@@ -172,12 +172,28 @@ class StreamlabsConfigFlow(ConfigFlow, domain=DOMAIN):
 class StreamlabsOptionsFlowHandler(OptionsFlow):
     """Handle options flow for StreamLabs Libre."""
 
+    def __init__(self, config_entry: ConfigEntry | None = None) -> None:
+        """Initialize options flow."""
+        self._custom_config_entry = config_entry
+
+    @property
+    def _entry(self) -> ConfigEntry:
+        """Get the current config entry safely across HA versions."""
+        if hasattr(self, "config_entry") and self.config_entry is not None:
+            return self.config_entry
+        if self._custom_config_entry is not None:
+            return self._custom_config_entry
+        if hasattr(self, "_config_entry_id") and self._config_entry_id and hasattr(self, "hass"):
+            return self.hass.config_entries.async_get_entry(self._config_entry_id)
+        return None
+
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Manage the options."""
-        options = self.config_entry.options or {}
-        data = self.config_entry.data or {}
+        entry = self._entry
+        options = (entry.options if entry else None) or {}
+        data = (entry.data if entry else None) or {}
 
         # Discover all available locations on the account if coordinator is available
         raw_current = options.get(CONF_LOCATIONS, data.get(CONF_LOCATIONS, []))
@@ -185,8 +201,8 @@ class StreamlabsOptionsFlowHandler(OptionsFlow):
             [str(x) for x in raw_current] if isinstance(raw_current, (list, set)) else []
         )
         location_options: Dict[str, str] = {}
-        coordinator = getattr(self.config_entry, "runtime_data", None)
-        if coordinator and hasattr(coordinator, "client"):
+        coordinator = getattr(entry, "runtime_data", None) if entry else None
+        if coordinator and hasattr(coordinator, "client") and hasattr(self, "hass") and self.hass:
             try:
                 resp = await self.hass.async_add_executor_job(coordinator.client.get_locations)
                 if isinstance(resp, dict):
@@ -212,7 +228,17 @@ class StreamlabsOptionsFlowHandler(OptionsFlow):
             else:
                 if selected_locs:
                     user_input[CONF_LOCATIONS] = selected_locs
-                return self.async_create_entry(title="", data=user_input)
+
+                # Explicitly persist options to config entry
+                if entry is not None and hasattr(self, "hass") and self.hass and hasattr(self.hass, "config_entries"):
+                    new_options = dict(entry.options or {})
+                    new_options.update(user_input)
+                    self.hass.config_entries.async_update_entry(entry, options=new_options)
+
+                try:
+                    return self.async_create_entry(data=user_input)
+                except TypeError:
+                    return self.async_create_entry(title="", data=user_input)
 
         legacy_interval = options.get(
             CONF_SCAN_INTERVAL,

@@ -14,7 +14,7 @@ try:
         entity_registry as er,
     )
 
-    from .const import DOMAIN, LOGGER
+    from .const import CONF_LOCATIONS, DOMAIN, LOGGER
     from .coordinator import StreamlabsConfigEntry, StreamlabsCoordinator
     from .services import async_setup_services
 
@@ -81,7 +81,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: StreamlabsConfigEntry) -
 async def async_remove_config_entry_device(
     hass: HomeAssistant, entry: StreamlabsConfigEntry, dev_entry: dr.DeviceEntry
 ) -> bool:
-    """Allow user to remove a device directly from the UI."""
+    """Allow user to remove a device directly from the UI and unmonitor its location."""
     coordinator = getattr(entry, "runtime_data", None)
     LOGGER.warning(
         "User manually requested deletion of device %s (identifiers=%s). Currently monitored devices: %s",
@@ -89,12 +89,52 @@ async def async_remove_config_entry_device(
         dev_entry.identifiers,
         list(coordinator.data.keys()) if (coordinator and hasattr(coordinator, "data")) else None,
     )
+    removed_loc_ids: set[str] = set()
     if coordinator and hasattr(coordinator, "data"):
         for domain, dev_id in dev_entry.identifiers:
             if domain == DOMAIN:
+                dev_obj = coordinator.data.get(dev_id)
+                if not dev_obj and hasattr(coordinator, "_cached_devices"):
+                    dev_obj = coordinator._cached_devices.get(dev_id)
+                if dev_obj and hasattr(dev_obj, "location_id") and dev_obj.location_id:
+                    removed_loc_ids.add(str(dev_obj.location_id))
                 coordinator.data.pop(dev_id, None)
                 if hasattr(coordinator, "_cached_devices"):
                     coordinator._cached_devices.pop(dev_id, None)
+
+    # If we identified which location this device belonged to, update entry.options so it remains unmonitored
+    if coordinator and removed_loc_ids:
+        all_account_locs: set[str] = set()
+        if hasattr(coordinator, "client"):
+            try:
+                resp = coordinator.client.get_status()
+                for loc in resp.get("locations_summary", []):
+                    raw_id = loc.get("location_id") or loc.get("locationId")
+                    if raw_id:
+                        all_account_locs.add(str(raw_id))
+            except Exception:
+                pass
+        if not all_account_locs:
+            for d in list(coordinator.data.values()) + list(getattr(coordinator, "_cached_devices", {}).values()):
+                if hasattr(d, "location_id") and d.location_id:
+                    all_account_locs.add(str(d.location_id))
+
+        current_monitored = (
+            set(coordinator.monitored_locations)
+            if coordinator.monitored_locations is not None
+            else all_account_locs
+        )
+        remaining_monitored = current_monitored - removed_loc_ids
+        if remaining_monitored:
+            coordinator.monitored_locations = remaining_monitored
+            new_opts = dict(entry.options or {})
+            new_opts[CONF_LOCATIONS] = list(remaining_monitored)
+            hass.config_entries.async_update_entry(entry, options=new_opts)
+            LOGGER.warning(
+                "Updated monitored locations after device deletion to: %s",
+                new_opts[CONF_LOCATIONS],
+            )
+
     return True
 
 

@@ -692,5 +692,62 @@ def test_coordinator_integer_location_id_matching(mock_hass, mock_client):
     assert "dev-unchecked" not in data
 
 
+def test_coordinator_auto_detect_subset_from_registry(mock_hass, mock_client):
+    from homeassistant.helpers import device_registry as dr
+    from custom_components.streamlabs_libre.const import CONF_LOCATIONS, DOMAIN
+    from custom_components.streamlabs_libre.coordinator import StreamlabsCoordinator
+
+    entry = MagicMock()
+    entry.options = {}
+    entry.data = {}
+    entry.entry_id = "test_entry"
+
+    # Mock device registry with only dev-pn registered
+    dev_entry_pn = MagicMock()
+    dev_entry_pn.identifiers = {(DOMAIN, "dev-pn")}
+    mock_dev_reg = MagicMock()
+    dr.async_get.return_value = mock_dev_reg
+    dr.async_entries_for_config_entry.return_value = [dev_entry_pn]
+
+    coordinator = StreamlabsCoordinator(mock_hass, entry, mock_client)
+    assert coordinator._registered_device_ids == {"dev-pn"}
+    assert coordinator.monitored_locations is None
+
+    mock_client.get_status.return_value = {
+        "locations_summary": [
+            {"location_id": "loc-pn", "location_name": "PN"},
+            {"location_id": "loc-np", "location_name": "NP"},
+        ],
+        "devices": [
+            {
+                "location_id": "loc-pn",
+                "location_name": "PN",
+                "device_id": "dev-pn",
+                "device_name": "PN",
+                "connected": True,
+                "flowing": False,
+            },
+            {
+                "location_id": "loc-np",
+                "location_name": "NP",
+                "device_id": "dev-np",
+                "device_name": "NP",
+                "connected": True,
+                "flowing": False,
+            },
+        ],
+    }
+    mock_client.get_water_usage.return_value = {"today": 10.0}
+
+    data = coordinator._update_data()
+    assert "dev-pn" in data
+    assert "dev-np" not in data
+    assert coordinator.monitored_locations == {"loc-pn"}
+    mock_hass.config_entries.async_update_entry.assert_called_once_with(
+        entry, options={CONF_LOCATIONS: ["loc-pn"]}
+    )
+
+
+
 
 

@@ -123,3 +123,42 @@ async def test_async_setup_entry_cleans_up_unmonitored_devices(mock_hass):
         assert can_remove is True
         assert "dev-1" not in entry.runtime_data.data
 
+
+@pytest.mark.asyncio
+async def test_async_remove_config_entry_device_unmonitors_location(mock_hass):
+    from custom_components.streamlabs_libre import async_remove_config_entry_device
+    from custom_components.streamlabs_libre.const import CONF_LOCATIONS, DOMAIN
+
+    entry = MagicMock()
+    entry.entry_id = "test_entry"
+    entry.options = {}
+
+    mock_coordinator = MagicMock()
+    dev_obj = MagicMock()
+    dev_obj.location_id = "loc-np"
+    dev_other = MagicMock()
+    dev_other.location_id = "loc-pn"
+
+    mock_coordinator.data = {"dev-np": dev_obj, "dev-pn": dev_other}
+    mock_coordinator._cached_devices = {}
+    mock_coordinator.monitored_locations = None
+    mock_coordinator.client.get_status.return_value = {
+        "locations_summary": [
+            {"location_id": "loc-pn", "location_name": "PN"},
+            {"location_id": "loc-np", "location_name": "NP"},
+        ]
+    }
+    entry.runtime_data = mock_coordinator
+
+    dev_entry = MagicMock()
+    dev_entry.id = "ha_dev_np"
+    dev_entry.identifiers = {(DOMAIN, "dev-np")}
+
+    can_remove = await async_remove_config_entry_device(mock_hass, entry, dev_entry)
+    assert can_remove is True
+    assert "dev-np" not in mock_coordinator.data
+    assert mock_coordinator.monitored_locations == {"loc-pn"}
+    mock_hass.config_entries.async_update_entry.assert_called_once_with(
+        entry, options={CONF_LOCATIONS: ["loc-pn"]}
+    )
+

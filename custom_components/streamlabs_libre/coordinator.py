@@ -113,6 +113,20 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
         locations_cfg = options.get(CONF_LOCATIONS, data.get(CONF_LOCATIONS))
         if locations_cfg is not None:
             self.monitored_locations = {str(x) for x in locations_cfg}
+        else:
+            # Check if user already has a subset of devices registered in Home Assistant
+            try:
+                from homeassistant.helpers import device_registry as dr
+                dev_reg = dr.async_get(hass)
+                existing_entries = dr.async_entries_for_config_entry(dev_reg, config_entry.entry_id)
+                registered_dev_ids = {
+                    dev_id for dev_entry in existing_entries
+                    for domain, dev_id in dev_entry.identifiers
+                    if domain == DOMAIN
+                }
+                self._registered_device_ids: Optional[Set[str]] = registered_dev_ids if registered_dev_ids else None
+            except Exception:
+                self._registered_device_ids = None
         self._yearly_cache: Dict[str, Dict[str, Any]] = {}
         self._telemetry_cache: Dict[str, Dict[str, Any]] = {}
         self._flow_tracking: Dict[str, Dict[str, Any]] = {}
@@ -329,6 +343,26 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
             options.get(CONF_LOCATIONS),
             data.get(CONF_LOCATIONS),
         )
+
+        # Auto-detect monitored locations if not configured, but existing HA registry has a subset
+        if self.monitored_locations is None and getattr(self, "_registered_device_ids", None):
+            matching_loc_ids = {
+                str(dev.get("location_id"))
+                for dev in raw_devices
+                if dev.get("device_id") in self._registered_device_ids and dev.get("location_id")
+            }
+            if matching_loc_ids and len(matching_loc_ids) < len(locations_summary):
+                self.monitored_locations = matching_loc_ids
+                _LOGGER.warning(
+                    "Auto-detected monitored locations based on existing Home Assistant device registry: %s",
+                    self.monitored_locations,
+                )
+                try:
+                    new_opts = dict(self.config_entry.options or {})
+                    new_opts[CONF_LOCATIONS] = list(self.monitored_locations)
+                    self.hass.config_entries.async_update_entry(self.config_entry, options=new_opts)
+                except Exception as err:
+                    _LOGGER.debug("Could not persist auto-detected locations: %s", err)
 
         for dev in raw_devices:
             raw_loc_id = dev.get("location_id")
