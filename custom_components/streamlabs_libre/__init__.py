@@ -8,9 +8,9 @@ from .const import DOMAIN
 try:
     from homeassistant.const import CONF_PASSWORD, CONF_USERNAME, Platform
     from homeassistant.core import HomeAssistant
-    from homeassistant.helpers import config_validation as cv
-    from homeassistant.helpers.typing import ConfigType
+    from homeassistant.helpers import config_validation as cv, device_registry as dr
 
+    from .const import DOMAIN, LOGGER
     from .coordinator import StreamlabsConfigEntry, StreamlabsCoordinator
     from .services import async_setup_services
 
@@ -45,6 +45,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: StreamlabsConfigEntry) -
     await coordinator.async_config_entry_first_refresh()
 
     entry.runtime_data = coordinator
+
+    # Remove stale/unmonitored devices from device registry
+    try:
+        dev_reg = dr.async_get(hass)
+        for dev_entry in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
+            for domain, dev_id in dev_entry.identifiers:
+                if domain == DOMAIN and dev_id not in coordinator.data:
+                    dev_reg.async_remove_device(dev_entry.id)
+                    LOGGER.info("Removed unmonitored StreamLabs device %s from registry", dev_id)
+                    break
+    except Exception as err:
+        LOGGER.debug("Could not clean up stale devices: %s", err)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     entry.async_on_unload(entry.add_update_listener(update_listener))

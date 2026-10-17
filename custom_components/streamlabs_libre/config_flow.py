@@ -98,7 +98,7 @@ class StreamlabsConfigFlow(ConfigFlow, domain=DOMAIN):
                     CONF_PASSWORD: password,
                 }
                 self._discovered_locations = {
-                    loc["locationId"]: loc.get("locationName") or f"Location {loc['locationId']}"
+                    str(loc["locationId"]): loc.get("locationName") or f"Location {loc['locationId']}"
                     for loc in locations
                     if "locationId" in loc
                 }
@@ -180,7 +180,10 @@ class StreamlabsOptionsFlowHandler(OptionsFlow):
         data = self.config_entry.data or {}
 
         # Discover all available locations on the account if coordinator is available
-        current_locations: List[str] = options.get(CONF_LOCATIONS, data.get(CONF_LOCATIONS, []))
+        raw_current = options.get(CONF_LOCATIONS, data.get(CONF_LOCATIONS, []))
+        current_locations: List[str] = (
+            [str(x) for x in raw_current] if isinstance(raw_current, (list, set)) else []
+        )
         location_options: Dict[str, str] = {}
         coordinator = getattr(self.config_entry, "runtime_data", None)
         if coordinator and hasattr(coordinator, "client"):
@@ -188,9 +191,11 @@ class StreamlabsOptionsFlowHandler(OptionsFlow):
                 resp = await self.hass.async_add_executor_job(coordinator.client.get_locations)
                 if isinstance(resp, dict):
                     for loc in resp.get("locations", []):
-                        if "locationId" in loc:
-                            location_options[loc["locationId"]] = (
-                                loc.get("locationName") or f"Location {loc['locationId']}"
+                        raw_id = loc.get("locationId") or loc.get("location_id") or loc.get("id")
+                        if raw_id is not None:
+                            str_id = str(raw_id)
+                            location_options[str_id] = (
+                                loc.get("locationName") or loc.get("name") or f"Location {str_id}"
                             )
             except Exception as err:
                 LOGGER.debug("Could not fetch locations in options flow: %s", err)
@@ -201,9 +206,12 @@ class StreamlabsOptionsFlowHandler(OptionsFlow):
 
         errors: dict[str, str] = {}
         if user_input is not None:
-            if location_options and len(location_options) > 1 and not user_input.get(CONF_LOCATIONS):
+            selected_locs = [str(x) for x in user_input.get(CONF_LOCATIONS, [])]
+            if location_options and len(location_options) > 1 and not selected_locs:
                 errors[CONF_LOCATIONS] = "no_location_selected"
             else:
+                if selected_locs:
+                    user_input[CONF_LOCATIONS] = selected_locs
                 return self.async_create_entry(title="", data=user_input)
 
         legacy_interval = options.get(
@@ -221,10 +229,11 @@ class StreamlabsOptionsFlowHandler(OptionsFlow):
 
         schema_dict: dict[Any, Any] = {}
         if len(location_options) > 1:
+            valid_defaults = [loc for loc in current_locations if loc in location_options]
             schema_dict[
                 vol.Required(
                     CONF_LOCATIONS,
-                    default=current_locations or list(location_options.keys()),
+                    default=valid_defaults or list(location_options.keys()),
                 )
             ] = cv.multi_select(location_options)
 

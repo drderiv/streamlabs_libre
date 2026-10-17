@@ -111,8 +111,8 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
         self.client = client
         self.monitored_locations: Optional[Set[str]] = None
         locations_cfg = options.get(CONF_LOCATIONS, data.get(CONF_LOCATIONS))
-        if locations_cfg:
-            self.monitored_locations = set(locations_cfg)
+        if locations_cfg is not None:
+            self.monitored_locations = {str(x) for x in locations_cfg}
         self._yearly_cache: Dict[str, Dict[str, Any]] = {}
         self._telemetry_cache: Dict[str, Dict[str, Any]] = {}
         self._flow_tracking: Dict[str, Dict[str, Any]] = {}
@@ -190,10 +190,10 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
             self._consecutive_failures = 0
 
         self._cached_devices.update(devices_data)
-        if self.monitored_locations:
+        if self.monitored_locations is not None:
             self._cached_devices = {
                 k: v for k, v in self._cached_devices.items()
-                if v.location_id in self.monitored_locations
+                if str(v.location_id) in self.monitored_locations
             }
 
         return dict(self._cached_devices)
@@ -317,8 +317,9 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
         devices_data: Dict[str, StreamLabsDeviceData] = {}
 
         for dev in raw_devices:
-            loc_id = dev.get("location_id")
-            if self.monitored_locations and loc_id not in self.monitored_locations:
+            raw_loc_id = dev.get("location_id")
+            loc_id = str(raw_loc_id) if raw_loc_id is not None else None
+            if self.monitored_locations is not None and (loc_id is None or loc_id not in self.monitored_locations):
                 continue
 
             device_id = dev.get("device_id")

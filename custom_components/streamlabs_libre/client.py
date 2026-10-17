@@ -173,8 +173,9 @@ class StreamLabsClient:
         devices: List[Dict[str, Any]] = []
 
         for loc in data.get("locations", []):
-            loc_id = loc.get("locationId")
-            loc_name = loc.get("locationName")
+            raw_loc_id = loc.get("locationId") or loc.get("location_id") or loc.get("id")
+            loc_id = str(raw_loc_id) if raw_loc_id is not None else None
+            loc_name = loc.get("locationName") or loc.get("name")
             gallons_today = loc.get("gallonsToday")
 
             for dev in loc.get("devices", []):

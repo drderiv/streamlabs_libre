@@ -656,4 +656,41 @@ def test_coordinator_unselected_locations_are_not_polled(mock_hass, mock_client)
     assert "detector-unchecked-2" not in device_called_ids
 
 
+def test_coordinator_integer_location_id_matching(mock_hass, mock_client):
+    """Verify that integer location IDs from API match string location IDs in config entry."""
+    entry = MagicMock()
+    # Configuration dialog saves string location IDs
+    entry.options = {CONF_LOCATIONS: ["101"]}
+    entry.data = {}
+    coordinator = StreamlabsCoordinator(mock_hass, entry, mock_client)
+
+    # API returns integer location IDs
+    mock_client.get_status.return_value = {
+        "devices": [
+            {
+                "location_id": 101,
+                "location_name": "Main Home",
+                "device_id": "dev-checked",
+                "connected": True,
+                "flowing": False,
+            },
+            {
+                "location_id": 102,
+                "location_name": "Second Home",
+                "device_id": "dev-unchecked",
+                "connected": True,
+                "flowing": False,
+            },
+        ]
+    }
+    mock_client.get_water_usage.return_value = {"today": 5.0}
+    mock_client.get_device.return_value = {"deviceId": "dev-checked"}
+
+    data = coordinator._update_data()
+    assert len(data) == 1
+    assert "dev-checked" in data
+    assert "dev-unchecked" not in data
+
+
+
 
