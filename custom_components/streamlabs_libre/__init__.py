@@ -107,7 +107,7 @@ async def async_remove_config_entry_device(
         all_account_locs: set[str] = set()
         if hasattr(coordinator, "client"):
             try:
-                resp = coordinator.client.get_status()
+                resp = await hass.async_add_executor_job(coordinator.client.get_status)
                 for loc in resp.get("locations_summary", []):
                     raw_id = loc.get("location_id") or loc.get("locationId")
                     if raw_id:

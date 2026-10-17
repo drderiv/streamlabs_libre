@@ -158,6 +158,7 @@ async def test_async_remove_config_entry_device_unmonitors_location(mock_hass):
     assert can_remove is True
     assert "dev-np" not in mock_coordinator.data
     assert mock_coordinator.monitored_locations == {"loc-pn"}
+    mock_hass.async_add_executor_job.assert_called_with(mock_coordinator.client.get_status)
     mock_hass.config_entries.async_update_entry.assert_called_once_with(
         entry, options={CONF_LOCATIONS: ["loc-pn"]}
     )

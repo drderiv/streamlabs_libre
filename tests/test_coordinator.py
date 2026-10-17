@@ -692,7 +692,8 @@ def test_coordinator_integer_location_id_matching(mock_hass, mock_client):
     assert "dev-unchecked" not in data
 
 
-def test_coordinator_auto_detect_subset_from_registry(mock_hass, mock_client):
+@pytest.mark.asyncio
+async def test_coordinator_auto_detect_subset_from_registry(mock_hass, mock_client):
     from homeassistant.helpers import device_registry as dr
     from custom_components.streamlabs_libre.const import CONF_LOCATIONS, DOMAIN
     from custom_components.streamlabs_libre.coordinator import StreamlabsCoordinator
@@ -739,7 +740,7 @@ def test_coordinator_auto_detect_subset_from_registry(mock_hass, mock_client):
     }
     mock_client.get_water_usage.return_value = {"today": 10.0}
 
-    data = coordinator._update_data()
+    data = await coordinator._async_update_data()
     assert "dev-pn" in data
     assert "dev-np" not in data
     assert coordinator.monitored_locations == {"loc-pn"}

@@ -131,6 +131,8 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
         self._telemetry_cache: Dict[str, Dict[str, Any]] = {}
         self._flow_tracking: Dict[str, Dict[str, Any]] = {}
 
+        self._pending_options_update: Optional[Dict[str, Any]] = None
+
         # Cached device state dictionary to preserve last known valid state across outages
         self._cached_devices: Dict[str, StreamLabsDeviceData] = {}
 
@@ -146,6 +148,14 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
             devices_data = await self.hass.async_add_executor_job(self._update_data)
         except Exception as err:
             fetch_error = err
+
+        if getattr(self, "_pending_options_update", None):
+            opts_to_update = self._pending_options_update
+            self._pending_options_update = None
+            try:
+                self.hass.config_entries.async_update_entry(self.config_entry, options=opts_to_update)
+            except Exception as err:
+                LOGGER.debug("Could not persist auto-detected locations: %s", err)
 
         # Handle upstream outage or communication failure
         if fetch_error is not None:
@@ -357,12 +367,9 @@ class StreamlabsCoordinator(DataUpdateCoordinator[Dict[str, StreamLabsDeviceData
                     "Auto-detected monitored locations based on existing Home Assistant device registry: %s",
                     self.monitored_locations,
                 )
-                try:
-                    new_opts = dict(self.config_entry.options or {})
-                    new_opts[CONF_LOCATIONS] = list(self.monitored_locations)
-                    self.hass.config_entries.async_update_entry(self.config_entry, options=new_opts)
-                except Exception as err:
-                    _LOGGER.debug("Could not persist auto-detected locations: %s", err)
+                new_opts = dict(self.config_entry.options or {})
+                new_opts[CONF_LOCATIONS] = list(self.monitored_locations)
+                self._pending_options_update = new_opts
 
         for dev in raw_devices:
             raw_loc_id = dev.get("location_id")
