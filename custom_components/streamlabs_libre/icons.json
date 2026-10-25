@@ -1,4 +1,31 @@
 {
+  "entity": {
+    "binary_sensor": {
+      "flowing": {
+        "default": "mdi:water-pump-off",
+        "state": {
+          "on": "mdi:water-pump"
+        }
+      }
+    },
+    "select": {
+      "monitoring_mode": {
+        "default": "mdi:home",
+        "state": {
+          "home": "mdi:home",
+          "away": "mdi:home-export-outline"
+        }
+      }
+    },
+    "valve": {
+      "shutoff_valve": {
+        "default": "mdi:valve-open",
+        "state": {
+          "closed": "mdi:valve-closed"
+        }
+      }
+    }
+  },
   "services": {
     "set_away_mode": {
       "service": "mdi:home"

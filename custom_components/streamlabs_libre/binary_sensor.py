@@ -10,11 +10,13 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
     BinarySensorEntityDescription,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .coordinator import StreamlabsConfigEntry, StreamlabsCoordinator, StreamLabsDeviceData
-from .entity import StreamlabsBaseEntity
+from .entity import StreamlabsBaseEntity, async_setup_device_entities
+
+PARALLEL_UPDATES = 0
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -22,30 +24,21 @@ class StreamlabsBinarySensorEntityDescription(BinarySensorEntityDescription):
     """Streamlabs binary sensor entity description."""
 
     is_on_fn: Callable[[StreamLabsDeviceData], bool]
+    available_when_disconnected: bool = False
 
 
 BINARY_SENSORS: tuple[StreamlabsBinarySensorEntityDescription, ...] = (
     StreamlabsBinarySensorEntityDescription(
         key="flowing",
-        name="Water flowing",
         translation_key="flowing",
-        icon="mdi:water-pump",
         is_on_fn=lambda data: data.flowing,
     ),
     StreamlabsBinarySensorEntityDescription(
         key="connectivity",
-        name="Connectivity",
         translation_key="connectivity",
         device_class=BinarySensorDeviceClass.CONNECTIVITY,
         is_on_fn=lambda data: data.connected,
-    ),
-    StreamlabsBinarySensorEntityDescription(
-        key="away_mode",
-        name="Away mode",
-        translation_key="away_mode",
-        icon="mdi:home-export-outline",
-        entity_registry_enabled_default=False,
-        is_on_fn=lambda data: data.mode == "away",
+        available_when_disconnected=True,
     ),
 )
 
@@ -56,29 +49,14 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up StreamLabs binary sensors from a config entry."""
-    coordinator = entry.runtime_data
-    added_entities: set[str] = set()
-
-    def _check_and_add_binary_sensors() -> None:
-        new_entities: list[StreamlabsBinarySensor] = []
-        for device_id in coordinator.data:
-            for entity_description in BINARY_SENSORS:
-                # Strictly omit optional/disabled entities (e.g. away_mode) from async_add_entities
-                # rather than relying solely on entity_registry_enabled_default = False.
-                if entity_description.entity_registry_enabled_default is False:
-                    continue
-                unique_key = f"{device_id}_{entity_description.key}"
-                if unique_key not in added_entities:
-                    added_entities.add(unique_key)
-                    new_entities.append(
-                        StreamlabsBinarySensor(coordinator, device_id, entity_description)
-                    )
-        if new_entities:
-            async_add_entities(new_entities)
-
-    _check_and_add_binary_sensors()
-    if hasattr(coordinator, "async_add_listener"):
-        entry.async_on_unload(coordinator.async_add_listener(_check_and_add_binary_sensors))
+    async_setup_device_entities(
+        entry,
+        async_add_entities,
+        lambda coordinator, device_id, _data: [
+            StreamlabsBinarySensor(coordinator, device_id, description)
+            for description in BINARY_SENSORS
+        ],
+    )
 
 
 class StreamlabsBinarySensor(StreamlabsBaseEntity, BinarySensorEntity):
@@ -95,11 +73,14 @@ class StreamlabsBinarySensor(StreamlabsBaseEntity, BinarySensorEntity):
         """Initialize the binary sensor."""
         super().__init__(coordinator, device_id, entity_description.key)
         self.entity_description = entity_description
+        self._available_when_disconnected = entity_description.available_when_disconnected
+        self._update_attrs()
 
-    @property
-    def is_on(self) -> bool:
-        """Return True if the binary sensor is on."""
-        data = self.device_data
-        if not data:
-            return False
-        return self.entity_description.is_on_fn(data)
+    def _update_attrs(self) -> None:
+        if (data := self.device_data) is not None:
+            self._attr_is_on = self.entity_description.is_on_fn(data)
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._update_attrs()
+        super()._handle_coordinator_update()

@@ -2,38 +2,50 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from collections.abc import Mapping
+import logging
+from typing import Any
+
 import voluptuous as vol
 
 from homeassistant.config_entries import (
     ConfigEntry,
+    ConfigEntryState,
     ConfigFlow,
     ConfigFlowResult,
-    OptionsFlow,
+    OptionsFlowWithReload,
 )
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
 
-from .client import (
-    StreamLabsAuthError,
-    StreamLabsClient,
-    StreamLabsConnectionError,
-    StreamLabsError,
-)
+from .client import StreamLabsAuthError, StreamLabsClient, StreamLabsConnectionError
 from .const import (
     CONF_LOCATIONS,
     CONF_SCAN_INTERVAL,
     CONF_WATER_OFF_INTERVAL,
     CONF_WATER_ON_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
-    DEFAULT_WATER_OFF_INTERVAL,
     DEFAULT_WATER_ON_INTERVAL,
     DOMAIN,
-    LOGGER,
     MAX_SCAN_INTERVAL,
     MIN_SCAN_INTERVAL,
 )
+
+_LOGGER = logging.getLogger(__name__)
+
+_INTERVAL_VALIDATOR = vol.All(
+    vol.Coerce(int), vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL)
+)
+
+
+def _fetch_locations(username: str, password: str) -> list[dict[str, Any]]:
+    """Authenticate (blocking) and return the account's locations."""
+    client = StreamLabsClient(username, password)
+    try:
+        return client.get_locations().get("locations", [])
+    finally:
+        client.close()
 
 
 class StreamlabsConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -41,18 +53,31 @@ class StreamlabsConfigFlow(ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    @staticmethod
-    @callback
-    def async_get_options_flow(
-        config_entry: ConfigEntry,
-    ) -> StreamlabsOptionsFlowHandler:
-        """Get the options flow for this handler."""
-        return StreamlabsOptionsFlowHandler(config_entry)
-
     def __init__(self) -> None:
         """Initialize config flow state."""
-        self._auth_data: Dict[str, str] = {}
-        self._discovered_locations: Dict[str, str] = {}
+        self._auth_data: dict[str, str] = {}
+        self._discovered_locations: dict[str, str] = {}
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> StreamlabsOptionsFlow:
+        """Get the options flow for this handler."""
+        return StreamlabsOptionsFlow()
+
+    async def _async_check_credentials(
+        self, username: str, password: str, errors: dict[str, str]
+    ) -> list[dict[str, Any]] | None:
+        """Validate credentials, recording a form error on failure."""
+        try:
+            return await self.hass.async_add_executor_job(_fetch_locations, username, password)
+        except StreamLabsAuthError:
+            errors["base"] = "invalid_auth"
+        except StreamLabsConnectionError:
+            errors["base"] = "cannot_connect"
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("Unexpected error during authentication")
+            errors["base"] = "unknown"
+        return None
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -67,63 +92,30 @@ class StreamlabsConfigFlow(ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(username.lower())
             self._abort_if_unique_id_configured()
 
-            def _validate() -> list[dict[str, Any]]:
-                client = StreamLabsClient(username, password)
-                resp = client.get_locations()
-                return resp.get("locations", [])
-
-            try:
-                locations = await self.hass.async_add_executor_job(_validate)
-            except StreamLabsAuthError:
-                errors["base"] = "invalid_auth"
-            except StreamLabsConnectionError:
-                errors["base"] = "cannot_connect"
-            except Exception:  # noqa: BLE001
-                LOGGER.exception("Unexpected error during authentication")
-                errors["base"] = "unknown"
-            else:
-                if not locations:
-                    # Account has no locations configured yet
-                    return self.async_create_entry(
-                        title=username,
-                        data={
-                            CONF_USERNAME: username,
-                            CONF_PASSWORD: password,
-                            CONF_LOCATIONS: [],
-                        },
-                    )
-
-                self._auth_data = {
-                    CONF_USERNAME: username,
-                    CONF_PASSWORD: password,
-                }
+            if (locations := await self._async_check_credentials(username, password, errors)) is not None:
+                self._auth_data = {CONF_USERNAME: username, CONF_PASSWORD: password}
                 self._discovered_locations = {
                     str(loc["locationId"]): loc.get("locationName") or f"Location {loc['locationId']}"
                     for loc in locations
                     if "locationId" in loc
                 }
 
-                if len(self._discovered_locations) == 1:
-                    loc_id = next(iter(self._discovered_locations))
-                    loc_name = self._discovered_locations[loc_id]
+                if not locations:
+                    # Account has no locations configured yet
                     return self.async_create_entry(
-                        title=loc_name,
-                        data={
-                            CONF_USERNAME: username,
-                            CONF_PASSWORD: password,
-                            CONF_LOCATIONS: [loc_id],
-                        },
+                        title=username, data={**self._auth_data, CONF_LOCATIONS: []}
                     )
-
+                if len(self._discovered_locations) == 1:
+                    loc_id, loc_name = next(iter(self._discovered_locations.items()))
+                    return self.async_create_entry(
+                        title=loc_name, data={**self._auth_data, CONF_LOCATIONS: [loc_id]}
+                    )
                 return await self.async_step_location()
 
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_USERNAME): str,
-                    vol.Required(CONF_PASSWORD): str,
-                }
+                {vol.Required(CONF_USERNAME): str, vol.Required(CONF_PASSWORD): str}
             ),
             errors=errors,
         )
@@ -135,7 +127,7 @@ class StreamlabsConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            selected_locs: List[str] = user_input.get(CONF_LOCATIONS, [])
+            selected_locs: list[str] = user_input.get(CONF_LOCATIONS, [])
             if not selected_locs:
                 errors[CONF_LOCATIONS] = "no_location_selected"
             else:
@@ -145,14 +137,8 @@ class StreamlabsConfigFlow(ConfigFlow, domain=DOMAIN):
                     )
                 else:
                     title = f"StreamLabs ({len(selected_locs)} locations)"
-
                 return self.async_create_entry(
-                    title=title,
-                    data={
-                        CONF_USERNAME: self._auth_data[CONF_USERNAME],
-                        CONF_PASSWORD: self._auth_data[CONF_PASSWORD],
-                        CONF_LOCATIONS: selected_locs,
-                    },
+                    title=title, data={**self._auth_data, CONF_LOCATIONS: selected_locs}
                 )
 
         return self.async_show_form(
@@ -160,130 +146,91 @@ class StreamlabsConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required(
-                        CONF_LOCATIONS,
-                        default=list(self._discovered_locations.keys()),
+                        CONF_LOCATIONS, default=list(self._discovered_locations)
                     ): cv.multi_select(self._discovered_locations)
                 }
             ),
             errors=errors,
         )
 
+    async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
+        """Start reauthentication after the stored credentials stopped working."""
+        return await self.async_step_reauth_confirm()
 
-class StreamlabsOptionsFlowHandler(OptionsFlow):
-    """Handle options flow for StreamLabs Libre."""
+    async def async_step_reauth_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Ask for a new password."""
+        errors: dict[str, str] = {}
+        entry = self._get_reauth_entry()
 
-    def __init__(self, config_entry: ConfigEntry | None = None) -> None:
-        """Initialize options flow."""
-        self._custom_config_entry = config_entry
+        if user_input is not None:
+            if (
+                await self._async_check_credentials(
+                    entry.data[CONF_USERNAME], user_input[CONF_PASSWORD], errors
+                )
+                is not None
+            ):
+                return self.async_update_reload_and_abort(
+                    entry, data_updates={CONF_PASSWORD: user_input[CONF_PASSWORD]}
+                )
 
-    @property
-    def _entry(self) -> ConfigEntry:
-        """Get the current config entry safely across HA versions."""
-        if hasattr(self, "config_entry") and self.config_entry is not None:
-            return self.config_entry
-        if self._custom_config_entry is not None:
-            return self._custom_config_entry
-        if hasattr(self, "_config_entry_id") and self._config_entry_id and hasattr(self, "hass"):
-            return self.hass.config_entries.async_get_entry(self._config_entry_id)
-        return None
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=vol.Schema({vol.Required(CONF_PASSWORD): str}),
+            description_placeholders={CONF_USERNAME: entry.data[CONF_USERNAME]},
+            errors=errors,
+        )
+
+
+class StreamlabsOptionsFlow(OptionsFlowWithReload):
+    """Handle options flow for StreamLabs Libre (reloads the entry when options change)."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Manage the options."""
-        entry = self._entry
-        options = (entry.options if entry else None) or {}
-        data = (entry.data if entry else None) or {}
+        entry = self.config_entry
+        options, data = entry.options, entry.data
 
-        # Discover all available locations on the account if coordinator is available
         raw_current = options.get(CONF_LOCATIONS, data.get(CONF_LOCATIONS, []))
-        current_locations: List[str] = (
-            [str(x) for x in raw_current] if isinstance(raw_current, (list, set)) else []
-        )
-        location_options: Dict[str, str] = {}
-        coordinator = getattr(entry, "runtime_data", None) if entry else None
-        if coordinator and hasattr(coordinator, "client") and hasattr(self, "hass") and self.hass:
-            try:
-                resp = await self.hass.async_add_executor_job(coordinator.client.get_locations)
-                if isinstance(resp, dict):
-                    for loc in resp.get("locations", []):
-                        raw_id = loc.get("locationId") or loc.get("location_id") or loc.get("id")
-                        if raw_id is not None:
-                            str_id = str(raw_id)
-                            location_options[str_id] = (
-                                loc.get("locationName") or loc.get("name") or f"Location {str_id}"
-                            )
-            except Exception as err:
-                LOGGER.debug("Could not fetch locations in options flow: %s", err)
+        current_locations = [str(x) for x in raw_current]
 
-        # Fallback to current_locations if get_locations was unavailable
-        if not location_options and current_locations:
+        # Locations come from the coordinator's last poll; fall back to the saved selection
+        location_options: dict[str, str] = {}
+        if entry.state is ConfigEntryState.LOADED:
+            location_options = dict(entry.runtime_data.known_locations)
+        if not location_options:
             location_options = {loc_id: f"Location {loc_id}" for loc_id in current_locations}
 
         errors: dict[str, str] = {}
         if user_input is not None:
-            selected_locs = [str(x) for x in user_input.get(CONF_LOCATIONS, [])]
-            if location_options and len(location_options) > 1 and not selected_locs:
+            selected = [str(x) for x in user_input.get(CONF_LOCATIONS, [])]
+            if len(location_options) > 1 and CONF_LOCATIONS in user_input and not selected:
                 errors[CONF_LOCATIONS] = "no_location_selected"
             else:
-                if selected_locs:
-                    user_input[CONF_LOCATIONS] = selected_locs
-
-                # Explicitly persist options to config entry
-                if entry is not None and hasattr(self, "hass") and self.hass and hasattr(self.hass, "config_entries"):
-                    new_options = dict(entry.options or {})
-                    new_options.update(user_input)
-                    self.hass.config_entries.async_update_entry(entry, options=new_options)
-
-                try:
-                    return self.async_create_entry(data=user_input)
-                except TypeError:
-                    return self.async_create_entry(title="", data=user_input)
+                new_options = {**options, **user_input}
+                if selected:
+                    new_options[CONF_LOCATIONS] = selected
+                return self.async_create_entry(data=new_options)
 
         legacy_interval = options.get(
-            CONF_SCAN_INTERVAL,
-            data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+            CONF_SCAN_INTERVAL, data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
         )
-        current_off = options.get(
-            CONF_WATER_OFF_INTERVAL,
-            data.get(CONF_WATER_OFF_INTERVAL, legacy_interval),
-        )
+        current_off = options.get(CONF_WATER_OFF_INTERVAL, data.get(CONF_WATER_OFF_INTERVAL, legacy_interval))
         current_on = options.get(
-            CONF_WATER_ON_INTERVAL,
-            data.get(CONF_WATER_ON_INTERVAL, DEFAULT_WATER_ON_INTERVAL),
+            CONF_WATER_ON_INTERVAL, data.get(CONF_WATER_ON_INTERVAL, DEFAULT_WATER_ON_INTERVAL)
         )
 
-        schema_dict: dict[Any, Any] = {}
+        schema: dict[Any, Any] = {}
         if len(location_options) > 1:
-            valid_defaults = [loc for loc in current_locations if loc in location_options]
-            schema_dict[
-                vol.Required(
-                    CONF_LOCATIONS,
-                    default=valid_defaults or list(location_options.keys()),
-                )
-            ] = cv.multi_select(location_options)
-
-        schema_dict[
-            vol.Required(
-                CONF_WATER_OFF_INTERVAL,
-                default=current_off,
+            defaults = [loc for loc in current_locations if loc in location_options]
+            schema[vol.Required(CONF_LOCATIONS, default=defaults or list(location_options))] = (
+                cv.multi_select(location_options)
             )
-        ] = vol.All(
-            vol.Coerce(int),
-            vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
-        )
-        schema_dict[
-            vol.Required(
-                CONF_WATER_ON_INTERVAL,
-                default=current_on,
-            )
-        ] = vol.All(
-            vol.Coerce(int),
-            vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
-        )
+        schema[vol.Required(CONF_WATER_OFF_INTERVAL, default=current_off)] = _INTERVAL_VALIDATOR
+        schema[vol.Required(CONF_WATER_ON_INTERVAL, default=current_on)] = _INTERVAL_VALIDATOR
 
         return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema(schema_dict),
-            errors=errors,
+            step_id="init", data_schema=vol.Schema(schema), errors=errors
         )

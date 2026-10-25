@@ -15,6 +15,13 @@
         "data": {
           "locations": "Locations"
         }
+      },
+      "reauth_confirm": {
+        "title": "Reauthenticate StreamLabs",
+        "description": "The StreamLabs credentials for {username} are no longer valid. Enter the current password.",
+        "data": {
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -24,19 +31,24 @@
       "unknown": "Unexpected error occurred."
     },
     "abort": {
-      "already_configured": "This StreamLabs account is already configured."
+      "already_configured": "This StreamLabs account is already configured.",
+      "reauth_successful": "Reauthentication was successful."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "StreamLabs Options",
-        "description": "Configure polling frequencies and device settings.",
+        "description": "Configure polling frequencies and monitored locations.",
         "data": {
+          "locations": "Locations",
           "water_off_interval": "Water off polling interval (seconds)",
           "water_on_interval": "Water on polling interval (seconds)"
         }
       }
+    },
+    "error": {
+      "no_location_selected": "Please select at least one location to monitor."
     }
   },
   "entity": {
@@ -60,12 +72,12 @@
       },
       "connectivity": {
         "name": "Connectivity"
-      },
-      "away_mode": {
-        "name": "Away mode"
       }
     },
     "sensor": {
+      "estimated_flow_rate": {
+        "name": "Estimated flow rate"
+      },
       "daily_usage": {
         "name": "Daily water usage"
       },
@@ -74,9 +86,6 @@
       },
       "yearly_usage": {
         "name": "Yearly water usage"
-      },
-      "gallons_today": {
-        "name": "Gallons today"
       },
       "room_humidity": {
         "name": "Room humidity"
@@ -89,10 +98,38 @@
       },
       "water_temp": {
         "name": "Water temp"
-      },
-      "estimated_flow_rate": {
-        "name": "Estimated flow rate"
       }
+    }
+  },
+  "selector": {
+    "monitoring_mode": {
+      "options": {
+        "home": "Home",
+        "away": "Away"
+      }
+    },
+    "valve_position": {
+      "options": {
+        "open": "Open",
+        "close": "Close"
+      }
+    }
+  },
+  "exceptions": {
+    "auth_failed": {
+      "message": "StreamLabs rejected the stored credentials. Reauthenticate the integration."
+    },
+    "cannot_connect": {
+      "message": "Error communicating with the StreamLabs API: {error}"
+    },
+    "command_failed": {
+      "message": "StreamLabs could not complete the request: {error}"
+    },
+    "device_not_found": {
+      "message": "The selected device is not a StreamLabs device."
+    },
+    "entry_not_loaded": {
+      "message": "The StreamLabs integration for this device is not loaded."
     }
   },
   "services": {
@@ -100,13 +137,13 @@
       "name": "Set away mode",
       "description": "Sets the home or away monitoring mode.",
       "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The StreamLabs device to control."
+        },
         "away_mode": {
           "name": "Away mode",
           "description": "Target monitoring state (home or away)."
-        },
-        "device_id": {
-          "name": "Device ID",
-          "description": "Specific StreamLabs Device ID to target."
         }
       }
     },
@@ -114,13 +151,13 @@
       "name": "Set valve position",
       "description": "Actuates the water shutoff valve directly.",
       "fields": {
+        "device_id": {
+          "name": "Device",
+          "description": "The StreamLabs device to control."
+        },
         "position": {
           "name": "Position",
           "description": "Target position (open or close)."
-        },
-        "device_id": {
-          "name": "Device ID",
-          "description": "Specific StreamLabs Device ID to target."
         }
       }
     },
@@ -129,8 +166,8 @@
       "description": "Executes diagnostic drip detect routine.",
       "fields": {
         "device_id": {
-          "name": "Device ID",
-          "description": "Specific StreamLabs Device ID to target."
+          "name": "Device",
+          "description": "The StreamLabs device to control."
         }
       }
     },
@@ -139,8 +176,8 @@
       "description": "Initiates device flow calibration.",
       "fields": {
         "device_id": {
-          "name": "Device ID",
-          "description": "Specific StreamLabs Device ID to target."
+          "name": "Device",
+          "description": "The StreamLabs device to control."
         }
       }
     }

@@ -8,6 +8,7 @@ import logging
 import os
 import signal
 import sys
+import types
 import time
 from typing import Any, Dict, List, Optional
 
@@ -18,6 +19,15 @@ _script_dir = os.path.dirname(os.path.realpath(__file__))
 _repo_root = os.path.dirname(_script_dir)
 if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
+
+# Load the client without running the package __init__ (which requires Home Assistant)
+_pkg_dir = os.path.join(_repo_root, "custom_components", "streamlabs_libre")
+_pkg = types.ModuleType("custom_components.streamlabs_libre")
+_pkg.__path__ = [_pkg_dir]
+sys.modules.setdefault("custom_components", types.ModuleType("custom_components")).__path__ = [
+    os.path.join(_repo_root, "custom_components")
+]
+sys.modules.setdefault("custom_components.streamlabs_libre", _pkg)
 
 from custom_components.streamlabs_libre.client import (
     StreamLabsClient,

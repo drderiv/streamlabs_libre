@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any
-
 from homeassistant.components.valve import (
     ValveDeviceClass,
     ValveEntity,
@@ -13,9 +10,11 @@ from homeassistant.components.valve import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from .const import VALVE_CLOSE, VALVE_OPEN
+from .const import ValvePosition
 from .coordinator import StreamlabsConfigEntry, StreamlabsCoordinator
-from .entity import StreamlabsBaseEntity
+from .entity import StreamlabsBaseEntity, async_setup_device_entities
+
+PARALLEL_UPDATES = 1
 
 
 async def async_setup_entry(
@@ -24,28 +23,21 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up StreamLabs valve from a config entry."""
-    coordinator = entry.runtime_data
-    added_devices: set[str] = set()
-
-    def _check_and_add_valves() -> None:
-        new_entities: list[StreamlabsValve] = []
-        for device_id, device_data in coordinator.data.items():
-            if device_id not in added_devices and (device_data.has_valve or device_data.valve_position is not None):
-                added_devices.add(device_id)
-                new_entities.append(StreamlabsValve(coordinator, device_id))
-        if new_entities:
-            async_add_entities(new_entities)
-
-    _check_and_add_valves()
-    if hasattr(coordinator, "async_add_listener"):
-        entry.async_on_unload(coordinator.async_add_listener(_check_and_add_valves))
+    async_setup_device_entities(
+        entry,
+        async_add_entities,
+        lambda coordinator, device_id, data: (
+            [StreamlabsValve(coordinator, device_id)]
+            if data.has_valve or data.valve_position is not None
+            else []
+        ),
+    )
 
 
 class StreamlabsValve(StreamlabsBaseEntity, ValveEntity):
     """Representation of a StreamLabs water shutoff valve."""
 
     _attr_device_class = ValveDeviceClass.WATER
-    _attr_name = "Water valve"
     _attr_translation_key = "shutoff_valve"
     _attr_supported_features = ValveEntityFeature.OPEN | ValveEntityFeature.CLOSE
     _attr_reports_position = False
@@ -58,49 +50,23 @@ class StreamlabsValve(StreamlabsBaseEntity, ValveEntity):
     def is_closed(self) -> bool | None:
         """Return True if valve is closed."""
         data = self.device_data
-        if not data or not data.valve_position:
+        actual = data.valve_position.lower() if data and data.valve_position else None
+        if (position := self._resolve_optimistic(actual)) is None:
             return None
-        return data.valve_position.lower() == VALVE_CLOSE
+        return position == ValvePosition.CLOSE
 
-    @property
-    def icon(self) -> str:
-        """Return dynamic valve icon."""
-        if self.is_closed:
-            return "mdi:valve-closed"
-        return "mdi:valve-open"
+    async def _async_set_valve(self, position: ValvePosition) -> None:
+        await self.coordinator.async_client_call(
+            self.coordinator.client.set_valve, self._device_id, position
+        )
+        self._set_optimistic(position)
+        self.async_write_ha_state()
+        await self.coordinator.async_request_refresh()
 
     async def async_open_valve(self) -> None:
         """Open the water valve."""
-        if self.device_data:
-            self.device_data.valve_position = VALVE_OPEN
-        self.async_write_ha_state()
-
-        try:
-            await self.hass.async_add_executor_job(
-                self.coordinator.client.set_valve, self._device_id, VALVE_OPEN
-            )
-        except Exception:
-            await self.coordinator.async_request_refresh()
-            self.async_write_ha_state()
-            raise
-
-        await asyncio.sleep(1.0)
-        await self.coordinator.async_request_refresh()
+        await self._async_set_valve(ValvePosition.OPEN)
 
     async def async_close_valve(self) -> None:
         """Close the water valve."""
-        if self.device_data:
-            self.device_data.valve_position = VALVE_CLOSE
-        self.async_write_ha_state()
-
-        try:
-            await self.hass.async_add_executor_job(
-                self.coordinator.client.set_valve, self._device_id, VALVE_CLOSE
-            )
-        except Exception:
-            await self.coordinator.async_request_refresh()
-            self.async_write_ha_state()
-            raise
-
-        await asyncio.sleep(1.0)
-        await self.coordinator.async_request_refresh()
+        await self._async_set_valve(ValvePosition.CLOSE)

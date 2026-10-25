@@ -2,7 +2,7 @@
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2024.1%2B-blue)](https://www.home-assistant.io/)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.8%2B-blue)](https://www.home-assistant.io/)
 
 **StreamLabs Libre** is a subscription-free Home Assistant integration and standalone automation suite for StreamLabs Water Monitors and Shutoff Valves (StreamLabs Monitor & StreamLabs Control).
 
@@ -13,7 +13,7 @@ The official Home Assistant core integration lacks shutoff valve actuation and o
 ## Key Features
 
 - 🚰 **Native Valve Platform (`valve`):** Full open/close actuation of the motorized shutoff valve named **Water valve** matching the mobile app UI, with native Home Assistant valve controls (`mdi:valve-open`, `mdi:valve-closed`).
-- 🏠 **Monitoring Mode (`select`):** Select between **Home** and **Away** modes directly from dashboards with instant optimistic UI updates and automated mode shifts based on home occupancy.
+- 🏠 **Monitoring Mode (`select`):** Select between **Home** and **Away** modes directly from dashboards with instant UI updates and automated mode shifts based on home occupancy.
 - 🌡️ **Environmental Telemetry Sensors (`sensor`):**
   - **Room Temperature** (`sensor.*_room_temperature`, °F / °C)
   - **Room Humidity** (`sensor.*_room_humidity`, %)
@@ -129,6 +129,16 @@ The StreamLabs API supports direct hardware maintenance routines via `POST /devi
 | **Identify** | `{"command": "identify"}` | Blinks LED hardware ring |
 
 ---
+
+## Upgrading to 2.0
+
+Requires Home Assistant 2025.8 or newer. Breaking changes:
+
+- The **Monitoring mode** select now uses the states `home` / `away` (shown as Home / Away in the UI). Update any template or automation that compared against `Home` / `Away`.
+- The redundant **Gallons today** sensor and **Away mode** binary sensor were removed (use *Daily water usage* and the *Monitoring mode* select).
+- The `streamlabs_libre.*` services now require a `device_id` chosen with the device picker (no more implicit "first device").
+- *Monthly water usage* is now `total_increasing`; *Yearly water usage* is a rolling 13-month window and no longer has a state class.
+- A changed password now raises a Home Assistant repair/re-authentication prompt, and entities become unavailable after about five consecutive failed polls instead of showing stale data forever.
 
 ## License and Legal
 
