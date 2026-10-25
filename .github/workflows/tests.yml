@@ -1,0 +1,23 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Install test dependencies
+        run: pip install pytest-homeassistant-custom-component paho-mqtt
+      - name: Real Home Assistant tests
+        run: python -m pytest -c tests_ha/pytest.ini --rootdir=. tests_ha -q
+      - name: Standalone client / bridge tests
+        run: python -m pytest -c tests_ha/pytest.ini --rootdir=. tests -q
