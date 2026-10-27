@@ -14,8 +14,12 @@ from custom_components.streamlabs_libre.client import (
 
 @pytest.fixture
 def mock_cognito():
+    from pycognito import Cognito
+
     with patch("custom_components.streamlabs_libre.client.Cognito") as mock:
-        cog = mock.return_value
+        # spec'd so calling a method pycognito doesn't have fails, as it would in production
+        cog = MagicMock(spec=Cognito)
+        mock.return_value = cog
         cog.id_token = "mock-id-token"
         yield cog
 
@@ -374,3 +378,17 @@ def test_get_status_missing_location_id_is_none(client, mock_cognito):
         mock_req.return_value.json.return_value = {"locations": [{"locationName": "X", "devices": []}]}
         summary = client.get_status()["locations_summary"]
     assert summary[0]["location_id"] is None
+
+
+def test_expired_token_is_renewed_with_refresh_token(client, mock_cognito):
+    client.token_expiry = 0.0  # expired
+    client._ensure_authenticated()
+    mock_cognito.renew_access_token.assert_called_once_with()
+    mock_cognito.authenticate.assert_not_called()
+
+
+def test_failed_renewal_falls_back_to_full_authentication(client, mock_cognito):
+    client.token_expiry = 0.0
+    mock_cognito.renew_access_token.side_effect = _client_error("NotAuthorizedException")
+    client._ensure_authenticated()
+    mock_cognito.authenticate.assert_called_once_with(password="secretpassword")

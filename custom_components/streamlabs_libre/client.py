@@ -140,7 +140,7 @@ class StreamLabsClient:
                 elif now >= self.token_expiry:
                     _LOGGER.debug("Renewing expired AWS Cognito ID token")
                     try:
-                        self.cognito.renew_id_token()
+                        self.cognito.renew_access_token()  # also issues a fresh ID token
                     except (ClientError, BotoCoreError) as renew_err:
                         _LOGGER.info("Token renewal failed (%s), performing full re-authentication", renew_err)
                         self.cognito.authenticate(password=self.password)
