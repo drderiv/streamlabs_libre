@@ -15,20 +15,18 @@ The official Home Assistant core integration lacks shutoff valve actuation and o
 - 🚰 **Native Valve Platform (`valve`):** Full open/close actuation of the motorized shutoff valve named **Water valve** matching the mobile app UI, with native Home Assistant valve controls (`mdi:valve-open`, `mdi:valve-closed`).
 - 🏠 **Monitoring Mode (`select`):** Select between **Home** and **Away** modes directly from dashboards with instant UI updates and automated mode shifts based on home occupancy.
 - 🌡️ **Environmental Telemetry Sensors (`sensor`):**
-  - **Room Temperature** (`sensor.*_room_temperature`, °F / °C)
+  - **Room Temperature** (`sensor.*_room_temp`, °F / °C)
   - **Room Humidity** (`sensor.*_room_humidity`, %)
   - **Water Pressure** (`sensor.*_water_pressure`, psi)
-  - **Water Temperature** (`sensor.*_water_temperature`, °F / °C)
+  - **Water Temperature** (`sensor.*_water_temp`, °F / °C)
 - 💧 **Water Usage & Consumption Sensors (`sensor`):** 
   - **Estimated flow rate** (`sensor.*_estimated_flow_rate`, gpm / gal/min)
   - Daily water consumption (gallons)
   - Monthly water consumption (gallons)
   - Yearly water consumption (gallons, matching mobile app 13-month rolling history)
-  - Location water usage today
 - ⚡ **Binary Sensors (`binary_sensor`):**
   - Instantaneous water flow detection (`mdi:water-pump`)
   - Cloud connection status
-  - Away mode state indicator (disabled by default in favor of the primary `select` control)
 - ⚙️ **Dual-Rate Dynamic Polling Options Flow:**
   - **Water off interval**: Polling frequency when water is idle (10s–300s, default: 60s) to keep cloud traffic light.
   - **Water on interval**: Rapid polling frequency when water is actively running (10s–300s, default: 15s) to dynamically measure flow rate in real time.
